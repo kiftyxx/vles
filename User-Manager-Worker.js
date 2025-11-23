@@ -1442,12 +1442,79 @@ async function handleAdminPanel(request, env, adminPath) {
         .switch .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; border-radius: 26px; transition: 0.3s; }
         .switch .slider:before { content: ""; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
         .switch input:checked + .slider:before { transform: translateX(24px); }
+        
+        /* 移动端汉堡菜单 */
+        .admin-menu-toggle {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1001;
+            background: #001529;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            width: 45px;
+            height: 45px;
+            cursor: pointer;
+            font-size: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+        }
+        .admin-menu-toggle:active {
+            transform: scale(0.95);
+        }
+        .admin-sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+        @media(max-width:768px) {
+            .admin-menu-toggle {
+                display: block;
+            }
+            .sidebar {
+                position: fixed;
+                left: -240px;
+                top: 0;
+                bottom: 0;
+                width: 240px;
+                z-index: 1000;
+                transition: left 0.3s;
+            }
+            .sidebar.mobile-open {
+                left: 0;
+            }
+            .admin-sidebar-overlay.show {
+                display: block;
+            }
+            .main-content {
+                width: 100%;
+            }
+            .content-header {
+                padding-left: 70px;
+            }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
       </style>
     </head>
     <body>
+      <!-- 移动端菜单按钮 -->
+      <button class="admin-menu-toggle" onclick="toggleAdminSidebar()">☰</button>
+      
+      <!-- 侧边栏遮罩层 -->
+      <div class="admin-sidebar-overlay" onclick="toggleAdminSidebar()"></div>
+      
       <div class="layout">
         <!-- 左侧导航 -->
-        <div class="sidebar">
+        <div class="sidebar" id="admin-sidebar">
           <div class="sidebar-header">
             <h1>VLESS 控制面板</h1>
             <div class="date">${new Date().toLocaleDateString('zh-CN')}</div>
@@ -2122,8 +2189,25 @@ async function handleAdminPanel(request, env, adminPath) {
           if(sectionName === 'plans') loadPlans();
           if(sectionName === 'orders') loadOrders();
           
+          // 移动端切换页面时关闭侧边栏
+          if (window.innerWidth <= 768) {
+            var sidebar = document.getElementById('admin-sidebar');
+            var overlay = document.querySelector('.admin-sidebar-overlay');
+            if(sidebar && sidebar.classList.contains('mobile-open')) {
+              sidebar.classList.remove('mobile-open');
+              overlay.classList.remove('show');
+            }
+          }
+          
           // 滚动到顶部
           document.querySelector('.main-content').scrollTop = 0;
+        }
+        
+        function toggleAdminSidebar() {
+          var sidebar = document.getElementById('admin-sidebar');
+          var overlay = document.querySelector('.admin-sidebar-overlay');
+          sidebar.classList.toggle('mobile-open');
+          overlay.classList.toggle('show');
         }
         
         // 页面加载时恢复上次的标签
@@ -3671,7 +3755,12 @@ async function renderUserDashboard(env, userInfo) {
                 return;
             }
 
-            const originalUrl = subUrl + '/' + uuid;
+            // 确保 URL有https://前缀
+            let normalizedSubUrl = subUrl.trim();
+            if (!normalizedSubUrl.startsWith('http://') && !normalizedSubUrl.startsWith('https://')) {
+                normalizedSubUrl = 'https://' + normalizedSubUrl;
+            }
+            const originalUrl = normalizedSubUrl + '/' + uuid;
             let finalUrl, clientName;
 
             if (type === 'original') {
@@ -3709,7 +3798,12 @@ async function renderUserDashboard(env, userInfo) {
                 return;
             }
 
-            const originalUrl = subUrl + '/' + uuid;
+            // 确保 URL有https://前缀
+            let normalizedSubUrl = subUrl.trim();
+            if (!normalizedSubUrl.startsWith('http://') && !normalizedSubUrl.startsWith('https://')) {
+                normalizedSubUrl = 'https://' + normalizedSubUrl;
+            }
+            const originalUrl = normalizedSubUrl + '/' + uuid;
             let finalUrl, clientName, schemeUrl;
 
             if (type === 'original') {
