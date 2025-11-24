@@ -15,6 +15,34 @@
 
 const SYSTEM_CONFIG_KEY = "SYSTEM_SETTINGS_V1";
 
+// 北京时间转换辅助函数
+function toBeijingTime(date) {
+  const d = new Date(date);
+  // 转换为 UTC+8 北京时间
+  const beijingTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return beijingTime;
+}
+
+function formatBeijingDateTime(date) {
+  if (!date) return '-';
+  const d = toBeijingTime(date);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const hour = String(d.getUTCHours()).padStart(2, '0');
+  const minute = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function formatBeijingDate(date) {
+  if (!date) return '-';
+  const d = toBeijingTime(date);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1340,9 +1368,9 @@ async function handleAdminPanel(request, env, adminPath) {
     const isEnabled = u.enabled; 
     
     const expiryDateObj = u.expiry ? new Date(u.expiry) : null;
-    const expiryText = expiryDateObj ? expiryDateObj.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '永久有效';
-    const expiryVal = expiryDateObj ? expiryDateObj.toISOString().split('T')[0] : '';
-    const createDate = u.createAt ? new Date(u.createAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+    const expiryText = expiryDateObj ? formatBeijingDateTime(u.expiry) : '永久有效';
+    const expiryVal = expiryDateObj ? formatBeijingDate(u.expiry) : '';
+    const createDate = u.createAt ? formatBeijingDateTime(u.createAt) : '-';
     
     let statusHtml = isExpired ? '<span class="tag expired">已过期</span>' : (!isEnabled ? '<span class="tag disabled">已禁用</span>' : '<span class="tag active">正常</span>');
     const safeName = u.name.replace(/'/g, "\\'");
@@ -1552,7 +1580,7 @@ async function handleAdminPanel(request, env, adminPath) {
         <div class="sidebar" id="admin-sidebar">
           <div class="sidebar-header">
             <h1>vless-snippets</h1>
-            <div class="date">${new Date().toLocaleDateString('zh-CN')}</div>
+            <div class="date">${formatBeijingDate(Date.now())}</div>
             <button onclick="adminLogout()" style="margin-top:10px;width:100%;padding:8px;background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;font-size:13px;" onmouseover="this.style.background=&quot;rgba(255,255,255,0.3)&quot;" onmouseout="this.style.background=&quot;rgba(255,255,255,0.2)&quot;">🚪 退出登录</button>
           </div>
           <ul class="menu">
@@ -1918,6 +1946,33 @@ async function handleAdminPanel(request, env, adminPath) {
       <div id="toast"></div>
 
       <script>
+        // 北京时间转换辅助函数（前端）
+        function toBeijingTime(date) {
+          const d = new Date(date);
+          const beijingTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+          return beijingTime;
+        }
+
+        function formatBeijingDateTime(date) {
+          if (!date) return '-';
+          const d = toBeijingTime(date);
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          const hour = String(d.getUTCHours()).padStart(2, '0');
+          const minute = String(d.getUTCMinutes()).padStart(2, '0');
+          return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
+        }
+
+        function formatBeijingDate(date) {
+          if (!date) return '-';
+          const d = toBeijingTime(date);
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          return year + '-' + month + '-' + day;
+        }
+        
         let proxyIPs = ${JSON.stringify(proxyIPsList)};
         let bestDomains = ${JSON.stringify(bestDomainsList)};
         
@@ -2174,7 +2229,7 @@ async function handleAdminPanel(request, env, adminPath) {
             let html = '<div style="overflow-x:auto;"><table style="width:100%;min-width:800px;"><thead><tr><th width="50">#</th><th width="80">显示</th><th>标题</th><th width="150">创建时间</th><th width="150">操作</th></tr></thead><tbody>';
             
             data.announcements.forEach((item, index) => {
-              const createdDate = new Date(item.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+              const createdDate = formatBeijingDateTime(item.created_at);
               const statusColor = item.enabled ? '#52c41a' : '#d9d9d9';
               const statusText = item.enabled ? '已启用' : '已禁用';
               
@@ -2721,8 +2776,8 @@ async function handleAdminPanel(request, env, adminPath) {
               var o = pendingOrders[i];
               var username = escapeHtml(o.username);
               var planName = escapeHtml(o.plan_name);
-              var createTime = new Date(o.created_at).toLocaleString('zh-CN');
-              var expiryTime = o.user_expiry ? new Date(o.user_expiry).toLocaleString('zh-CN') : '\u6c38\u4e45\u6709\u6548';
+              var createTime = formatBeijingDateTime(o.created_at);
+              var expiryTime = o.user_expiry ? formatBeijingDateTime(o.user_expiry) : '\u6c38\u4e45\u6709\u6548';
               
               html += '<div class="user-row" style="padding:15px;margin-bottom:10px;">';
               html += '<div style="flex:1;">';
@@ -3519,10 +3574,10 @@ async function renderUserDashboard(env, userInfo) {
     const shadowrocketUrl = apiBaseUrl + '?target=shadowrocket&url=' + encodeURIComponent(originalSubUrl);
     const quanxUrl = apiBaseUrl + '?target=quanx&url=' + encodeURIComponent(originalSubUrl);
     
-    const expiryText = userInfo.expiry ? new Date(userInfo.expiry).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '永久有效';
-    const expiryDate = userInfo.expiry ? new Date(userInfo.expiry).toISOString().split('T')[0] : '';
-    const createdDate = new Date(userInfo.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const lastLoginDate = new Date(userInfo.lastLogin).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const expiryText = userInfo.expiry ? formatBeijingDateTime(userInfo.expiry) : '永久有效';
+    const expiryDate = userInfo.expiry ? formatBeijingDate(userInfo.expiry) : '';
+    const createdDate = formatBeijingDateTime(userInfo.createdAt);
+    const lastLoginDate = formatBeijingDateTime(userInfo.lastLogin);
     
     let statusClass = 'status-active';
     let statusText = '✅ 正常';
@@ -4099,6 +4154,33 @@ async function renderUserDashboard(env, userInfo) {
     <div class="toast" id="toast"></div>
 
     <script>
+        // 北京时间转换辅助函数（前端）
+        function toBeijingTime(date) {
+          const d = new Date(date);
+          const beijingTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+          return beijingTime;
+        }
+
+        function formatBeijingDateTime(date) {
+          if (!date) return '-';
+          const d = toBeijingTime(date);
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          const hour = String(d.getUTCHours()).padStart(2, '0');
+          const minute = String(d.getUTCMinutes()).padStart(2, '0');
+          return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
+        }
+
+        function formatBeijingDate(date) {
+          if (!date) return '-';
+          const d = toBeijingTime(date);
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          return year + '-' + month + '-' + day;
+        }
+        
         const apiBaseUrl = 'https://url.v1.mk/sub';
         const subUrl = \`${subUrl}\`;
         const uuid = \`${userInfo.uuid}\`;
@@ -4375,8 +4457,8 @@ async function renderUserDashboard(env, userInfo) {
                         statusColor = '#ff4d4f';
                         statusText = '已拒绝';
                     }
-                    var createTime = new Date(o.created_at).toLocaleString('zh-CN');
-                    var paidTime = o.paid_at ? new Date(o.paid_at).toLocaleString('zh-CN') : '-';
+                    var createTime = formatBeijingDateTime(o.created_at);
+                    var paidTime = o.paid_at ? formatBeijingDateTime(o.paid_at) : '-';
                     
                     html += '<div class="card" style="margin-bottom:15px;">';
                     html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
