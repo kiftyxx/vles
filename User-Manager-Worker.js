@@ -1293,6 +1293,11 @@ async function handleAdminUpdateSystemSettings(request, env) {
     currentSettings.announcementVersion = (currentSettings.announcementVersion || 0) + 1;
   }
   
+  // 更新站点名称
+  if (formData.has('siteName')) {
+    currentSettings.siteName = formData.get('siteName') || 'CFly';
+  }
+  
   await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
     .bind(SYSTEM_CONFIG_KEY, JSON.stringify(currentSettings))
     .run();
@@ -1385,7 +1390,7 @@ async function handleAdminPanel(request, env, adminPath) {
   }
 
   if (!isLogged) {
-    return renderAdminLoginPage(env, adminPath);
+    return await renderAdminLoginPage(env, adminPath);
   }
 
   // 【关键修复】先并发获取数据
@@ -1402,6 +1407,7 @@ async function handleAdminPanel(request, env, adminPath) {
   let bestDomainsList = settings.bestDomains || [];
   let subUrl = settings.subUrl || "";
   let websiteUrl = settings.websiteUrl || ""; // 官网地址
+  let siteName = settings.siteName || "CFly"; // 站点名称，默认CFly
 
   const rows = usersData.map(u => {
     const isExpired = u.expiry && u.expiry < Date.now();
@@ -1449,7 +1455,7 @@ async function handleAdminPanel(request, env, adminPath) {
     <!DOCTYPE html>
     <html lang="zh-CN">
     <head>
-      <title>vless-snippets 控制面板</title>
+      <title>${siteName} 控制面板</title>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
@@ -1620,7 +1626,7 @@ async function handleAdminPanel(request, env, adminPath) {
         <!-- 左侧导航 -->
         <div class="sidebar" id="admin-sidebar">
           <div class="sidebar-header">
-            <h1>vless-snippets</h1>
+            <h1>${siteName}</h1>
             <div class="date">${formatBeijingDate(Date.now())}</div>
             <button onclick="adminLogout()" style="margin-top:10px;width:100%;padding:8px;background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:4px;cursor:pointer;font-size:13px;" onmouseover="this.style.background=&quot;rgba(255,255,255,0.3)&quot;" onmouseout="this.style.background=&quot;rgba(255,255,255,0.2)&quot;">🚪 退出登录</button>
           </div>
@@ -1675,6 +1681,13 @@ async function handleAdminPanel(request, env, adminPath) {
             <div class="content-body">
               <div class="card">
                 <h3 style="margin-bottom:15px;">系统设置</h3>
+                <div style="padding:15px;background:#f0f5ff;border-radius:8px;margin-bottom:15px;">
+                  <div style="margin-bottom:8px;">
+                    <span style="font-weight:600;display:block;margin-bottom:4px;">🏷️ 站点名称</span>
+                    <div style="font-size:13px;color:#666;">用于显示需要站点名称的地方</div>
+                  </div>
+                  <input type="text" id="siteNameInput" value="${siteName}" onchange="updateSystemSettings()" placeholder="请输入站点名称，例如：CFly" style="width:100%;padding:10px;border:1px solid #d9d9d9;border-radius:4px;font-size:14px;">
+                </div>
                 <div style="padding:15px;background:#f8f9fa;border-radius:8px;margin-bottom:15px;">
                   <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
                     <div>
@@ -2359,6 +2372,7 @@ async function handleAdminPanel(request, env, adminPath) {
         }
         
         async function updateSystemSettings() {
+          const siteName = document.getElementById('siteNameInput').value;
           const enableRegister = document.getElementById('enableRegisterCheck').checked;
           const autoApproveOrder = document.getElementById('autoApproveOrderCheck').checked;
           const pendingOrderExpiry = document.getElementById('pendingOrderExpiry').value;
@@ -2368,6 +2382,7 @@ async function handleAdminPanel(request, env, adminPath) {
           const customLink2Name = document.getElementById('customLink2Name').value;
           const customLink2Url = document.getElementById('customLink2Url').value;
           const fd = new FormData();
+          fd.append('siteName', siteName);
           fd.append('enableRegister', enableRegister);
           fd.append('autoApproveOrder', autoApproveOrder);
           fd.append('pendingOrderExpiry', pendingOrderExpiry);
@@ -3387,7 +3402,9 @@ async function handleAdminPanel(request, env, adminPath) {
 }
 
 // 渲染管理员登录页面
-function renderAdminLoginPage(env, adminPath) {
+async function renderAdminLoginPage(env, adminPath) {
+    const settings = await dbGetSettings(env) || {};
+    const siteName = settings.siteName || "CFly";
     const adminUsername = env.ADMIN_USERNAME || 'admin';
     return new Response(`<!DOCTYPE html>
 <html lang="zh-CN">
@@ -3511,7 +3528,7 @@ function renderAdminLoginPage(env, adminPath) {
 <body>
     <div class="container">
         <div style="text-align:center;margin-bottom:20px;padding:15px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;color:white;">
-            <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ vless-snippets</h2>
+            <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ ${siteName}</h2>
             <p style="margin:0;font-size:13px;opacity:0.9;">轻量级 VLESS 订阅管理系统</p>
         </div>
         <h2>🔐 管理员登录</h2>
@@ -3632,6 +3649,7 @@ async function renderAuthPage(env) {
     const settings = await dbGetSettings(env) || { subUrl: "", enableRegister: false };
     const enableRegister = settings.enableRegister === true;
     const subUrl = settings.subUrl || "";
+    const siteName = settings.siteName || "CFly";
     const adminPath = env.ADMIN_PATH || '/admin';
     
     return new Response(`<!DOCTYPE html>
@@ -3859,7 +3877,7 @@ async function renderAuthPage(env) {
             <!-- 登录表单 -->
             <div class="form-section active" id="login-section">
                 <div style="text-align:center;margin-bottom:20px;padding:15px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;color:white;">
-                    <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ vless-snippets</h2>
+                    <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ ${siteName}</h2>
                     <p style="margin:0;font-size:13px;opacity:0.9;">轻量级 VLESS 订阅服务</p>
                 </div>
                 <h2>🔐 用户登录</h2>
@@ -3883,7 +3901,7 @@ async function renderAuthPage(env) {
             <!-- 注册表单 -->
             <div class="form-section" id="register-section">
                 <div style="text-align:center;margin-bottom:20px;padding:15px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;color:white;">
-                    <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ vless-snippets</h2>
+                    <h2 style="margin:0 0 8px 0;font-size:20px;">⚡ ${siteName}</h2>
                     <p style="margin:0;font-size:13px;opacity:0.9;">轻量级 VLESS 订阅服务</p>
                 </div>
                 <h2>📝 用户注册</h2>
@@ -4027,6 +4045,7 @@ async function renderAuthPage(env) {
 async function renderUserDashboard(env, userInfo) {
     const settings = await dbGetSettings(env) || { subUrl: "" };
     const subUrl = settings.subUrl || "";
+    const siteName = settings.siteName || "CFly";
     const adminPath = env.ADMIN_PATH || '/admin';
     
     // 获取自定义链接配置
@@ -4071,7 +4090,7 @@ async function renderUserDashboard(env, userInfo) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>vless-snippets 用户面板</title>
+    <title>${siteName} 用户面板</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -4493,7 +4512,7 @@ async function renderUserDashboard(env, userInfo) {
         <!-- 左侧导航 -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h1>vless-snippets</h1>
+                <h1>${siteName}</h1>
                 <div class="user-info-mini">
                     ${userInfo.username}<br>
                     ${new Date().toLocaleDateString('zh-CN')}
