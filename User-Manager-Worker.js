@@ -3403,7 +3403,7 @@ async function handleAdminPanel(request, env, adminPath) {
             const file = input.files[0];
             if (!file) return;
             
-            if (!confirm('⚠️ 导入操作会覆盖现有数据！\n\n确定要导入文件 "' + file.name + '" 吗？')) {
+            if (!confirm('⚠️ 导入操作会覆盖现有数据！确定要导入文件 "' + file.name + '" 吗？')) {
                 input.value = '';
                 return;
             }
