@@ -45,6 +45,7 @@ async function login(req, res) {
         // 检查或创建管理员账号
         let adminUser = db.getUserByUsername(ADMIN_USERNAME);
         if (!adminUser) {
+            console.log('[管理员] 管理员账号不存在，正在创建...');
             const passwordHash = db.hashPassword(ADMIN_PASSWORD);
             const adminUUID = db.generateUUID();
             
@@ -53,6 +54,7 @@ async function login(req, res) {
             db.addUser(adminUUID, '管理员', expiry);
             db.createUserAccount(ADMIN_USERNAME, passwordHash, '', adminUUID);
             adminUser = db.getUserByUsername(ADMIN_USERNAME);
+            console.log('[管理员] 管理员账号创建成功:', adminUUID);
         }
         
         // 创建会话
@@ -243,20 +245,24 @@ function updateUser(req, res) {
     }
     
     try {
-        const { uuid, name, expiryDate, newPassword, frontUsername, frontPassword } = req.body;
+        const { uuid, name, expiry, expiryDate, newPassword, frontUsername, frontPassword } = req.body;
         
         if (!uuid) {
             return res.status(400).json({ error: 'UUID required' });
         }
         
-        let expiry = null;
-        if (expiryDate) {
+        let finalExpiry = null;
+        if (expiry !== undefined && expiry !== null) {
+            // 前端发送时间戳
+            finalExpiry = expiry;
+        } else if (expiryDate) {
+            // 兼容旧版日期字符串格式
             const [year, month, day] = expiryDate.split('-').map(Number);
             const beijingEndOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 8, 59, 59, 999));
-            expiry = beijingEndOfDay.getTime();
+            finalExpiry = beijingEndOfDay.getTime();
         }
         
-        db.updateUser(uuid, name, expiry);
+        db.updateUser(uuid, name, finalExpiry);
         
         // 更新密码
         if (newPassword && newPassword.trim() !== '') {
@@ -301,6 +307,16 @@ function deleteUsers(req, res) {
         
         if (uuids) {
             const uuidList = uuids.split(',');
+            
+            // 检查是否包含管理员账号
+            const adminUser = db.getUserByUsername(ADMIN_USERNAME);
+            if (adminUser) {
+                const adminAccount = db.getUserAccountByUserId(adminUser.id);
+                if (adminAccount && uuidList.includes(adminAccount.uuid)) {
+                    return res.status(403).json({ error: '不能删除管理员账号' });
+                }
+            }
+            
             db.deleteUsers(uuidList);
         }
         
@@ -387,6 +403,21 @@ function getUserAccount(req, res) {
     }
 }
 
+// 获取所有用户列表
+function getAllUsers(req, res) {
+    if (!validateAdminSession(req)) {
+        return res.status(401).json({ error: '未授权' });
+    }
+    
+    try {
+        const users = db.getAllUsers();
+        res.json({ success: true, users });
+    } catch (e) {
+        console.error('获取用户列表错误:', e);
+        res.status(500).json({ error: '服务器错误' });
+    }
+}
+
 // 获取系统设置
 function getSystemSettings(req, res) {
     if (!validateAdminSession(req)) {
@@ -401,16 +432,16 @@ function getSystemSettings(req, res) {
                 siteName: settings.siteName || 'CFly',
                 enableRegister: settings.enableRegister !== false,
                 autoApproveOrder: settings.autoApproveOrder === true,
-                enableTrial: settings.enableTrial === true,
+                enableTrial: settings.enableTrial !== undefined ? settings.enableTrial : false,
                 trialDays: settings.trialDays || 1,
-                requireInviteCode: settings.requireInviteCode === true,
+                requireInviteCode: settings.requireInviteCode !== undefined ? settings.requireInviteCode : false,
                 pendingOrderExpiry: settings.pendingOrderExpiry || 30,
                 paymentOrderExpiry: settings.paymentOrderExpiry || 15,
-                customLink1Name: settings.customLink1Name || '',
-                customLink1Url: settings.customLink1Url || '',
-                customLink2Name: settings.customLink2Name || '',
-                customLink2Url: settings.customLink2Url || '',
-                enableAutoCleanup: settings.enableAutoCleanup === true,
+                link1Name: settings.customLink1Name || '',
+                link1Url: settings.customLink1Url || '',
+                link2Name: settings.customLink2Name || '',
+                link2Url: settings.customLink2Url || '',
+                autoCleanupEnabled: settings.enableAutoCleanup !== undefined ? settings.enableAutoCleanup : false,
                 autoCleanupDays: settings.autoCleanupDays || 7,
                 subUrl: settings.subUrl || '',
                 websiteUrl: settings.websiteUrl || '',
@@ -500,43 +531,43 @@ function updateSystemSettings(req, res) {
         const body = req.body;
         
         if (body.enableRegister !== undefined) {
-            currentSettings.enableRegister = body.enableRegister === 'true';
+            currentSettings.enableRegister = body.enableRegister === true || body.enableRegister === 'true';
         }
         if (body.autoApproveOrder !== undefined) {
-            currentSettings.autoApproveOrder = body.autoApproveOrder === 'true';
+            currentSettings.autoApproveOrder = body.autoApproveOrder === true || body.autoApproveOrder === 'true';
         }
         if (body.enableTrial !== undefined) {
-            currentSettings.enableTrial = body.enableTrial === 'true';
+            currentSettings.enableTrial = body.enableTrial === true || body.enableTrial === 'true';
         }
         if (body.trialDays !== undefined) {
-            currentSettings.trialDays = parseInt(body.trialDays) || 7;
+            currentSettings.trialDays = parseInt(body.trialDays) || 1;
         }
         if (body.requireInviteCode !== undefined) {
-            currentSettings.requireInviteCode = body.requireInviteCode === 'true';
+            currentSettings.requireInviteCode = body.requireInviteCode === true || body.requireInviteCode === 'true';
         }
         if (body.pendingOrderExpiry !== undefined) {
-            currentSettings.pendingOrderExpiry = parseInt(body.pendingOrderExpiry) || 0;
+            currentSettings.pendingOrderExpiry = parseInt(body.pendingOrderExpiry) || 30;
         }
         if (body.paymentOrderExpiry !== undefined) {
             currentSettings.paymentOrderExpiry = parseInt(body.paymentOrderExpiry) || 15;
         }
-        if (body.customLink1Name !== undefined) {
-            currentSettings.customLink1Name = body.customLink1Name || '';
+        if (body.link1Name !== undefined) {
+            currentSettings.customLink1Name = body.link1Name || '';
         }
-        if (body.customLink1Url !== undefined) {
-            currentSettings.customLink1Url = body.customLink1Url || '';
+        if (body.link1Url !== undefined) {
+            currentSettings.customLink1Url = body.link1Url || '';
         }
-        if (body.customLink2Name !== undefined) {
-            currentSettings.customLink2Name = body.customLink2Name || '';
+        if (body.link2Name !== undefined) {
+            currentSettings.customLink2Name = body.link2Name || '';
         }
-        if (body.customLink2Url !== undefined) {
-            currentSettings.customLink2Url = body.customLink2Url || '';
+        if (body.link2Url !== undefined) {
+            currentSettings.customLink2Url = body.link2Url || '';
         }
         if (body.siteName !== undefined) {
             currentSettings.siteName = body.siteName || 'CFly';
         }
-        if (body.enableAutoCleanup !== undefined) {
-            currentSettings.enableAutoCleanup = body.enableAutoCleanup === 'true';
+        if (body.autoCleanupEnabled !== undefined) {
+            currentSettings.enableAutoCleanup = body.autoCleanupEnabled === true || body.autoCleanupEnabled === 'true';
         }
         if (body.autoCleanupDays !== undefined) {
             currentSettings.autoCleanupDays = parseInt(body.autoCleanupDays) || 7;
@@ -666,7 +697,26 @@ function getOrders(req, res) {
     }
     
     const status = req.query.status || 'all';
-    const orders = db.getOrders(status);
+    let orders = db.getOrders(status);
+    
+    // 检查订单过期时间
+    const settings = db.getSettings() || {};
+    const now = Date.now();
+    const pendingExpiry = settings.pendingOrderExpiry || 0; // 分钟
+    const paymentExpiry = settings.paymentOrderExpiry || 15; // 分钟
+    
+    orders = orders.map(order => {
+        if (order.status === 'pending' && pendingExpiry > 0) {
+            const expiryTime = order.created_at + (pendingExpiry * 60 * 1000);
+            if (now > expiryTime) {
+                // 更新订单状态为已过期
+                db.updateOrderStatus(order.id, 'expired');
+                order.status = 'expired';
+            }
+        }
+        return order;
+    });
+    
     res.json({ success: true, orders: orders });
 }
 
@@ -872,13 +922,13 @@ function savePaymentChannel(req, res) {
     }
     
     try {
-        const { name, code, api_url, api_token } = req.body;
+        const { name, code, api_url, api_token, callback_url } = req.body;
         
         if (!name || !code || !api_url || !api_token) {
             return res.status(400).json({ error: '所有字段都不能为空' });
         }
         
-        db.createPaymentChannel(name, code, api_url, api_token);
+        db.createPaymentChannel(name, code, api_url, api_token, callback_url || null);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: '服务器错误' });
@@ -891,8 +941,8 @@ function updatePaymentChannel(req, res) {
     }
     
     try {
-        const { id, name, code, api_url, api_token } = req.body;
-        db.updatePaymentChannel(parseInt(id), name, code, api_url, api_token);
+        const { id, name, code, api_url, api_token, callback_url } = req.body;
+        db.updatePaymentChannel(parseInt(id), name, code, api_url, api_token, callback_url || null);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: '服务器错误' });
@@ -1274,9 +1324,29 @@ function clearSystemLogs(req, res) {
 function getStatistics(req, res) {
     try {
         const stats = db.getStats();
-        res.json(stats);
+        
+        // 获取配置节点数
+        const settings = db.getSettings() || {};
+        const configNodes = (settings.proxyIPs || []).length + (settings.bestDomains || []).length;
+        
+        // 转换为前端期望的格式
+        res.json({
+            totalUsers: stats.users?.total || 0,
+            activeUsers: stats.users?.active || 0,
+            expiredUsers: stats.users?.expired || 0,
+            configNodes: configNodes,
+            // 保留原始完整数据供其他使用
+            ...stats
+        });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error('获取统计数据错误:', e);
+        res.status(500).json({ 
+            error: e.message,
+            totalUsers: 0,
+            activeUsers: 0,
+            expiredUsers: 0,
+            configNodes: 0
+        });
     }
 }
 
@@ -1291,6 +1361,7 @@ module.exports = {
     deleteUsers,
     updateStatus,
     getUserAccount,
+    getAllUsers,
     getUserDetail,
     saveSettings,
     getSystemSettings,
