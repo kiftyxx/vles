@@ -190,7 +190,7 @@ async function paymentNotify(req, res) {
                 
                 // 更新支付信息
                 if (trade_id) {
-                    db.updateOrderPaymentInfo(orderId, order_id, trade_id);
+                    db.updateOrderPaymentInfo(order.id, order_id, trade_id);
                     console.log('✓ 更新支付单号:', { payment_order_id: order_id, payment_trade_id: trade_id });
                 }
                 
@@ -199,10 +199,10 @@ async function paymentNotify(req, res) {
                 const newExpiry = Math.max(currentExpiry, Date.now()) + (order.duration_days * 24 * 60 * 60 * 1000);
                 
                 db.updateUserExpiry(userAccount.uuid, newExpiry);
-                db.updateOrderStatus(orderId, 'approved', Date.now());
+                db.updateOrderStatus(order.id, 'approved', Date.now());
                 
                 console.log('✅ 订单支付成功处理完成:');
-                console.log('   - 订单ID:', orderId);
+                console.log('   - 订单ID:', order.id);
                 console.log('   - 用户UUID:', userAccount.uuid);
                 console.log('   - 当前到期时间:', new Date(currentExpiry).toISOString());
                 console.log('   - 新到期时间:', new Date(newExpiry).toISOString());
