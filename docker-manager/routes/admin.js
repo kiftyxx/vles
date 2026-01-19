@@ -2053,9 +2053,9 @@ function getStatistics(req, res) {
     try {
         const stats = db.getStats();
         
-        // 获取配置节点数
+        // 获取配置节点数（只统计优选域名，不包含ProxyIP）
         const settings = db.getSettings() || {};
-        const configNodes = (settings.proxyIPs || []).length + (settings.bestDomains || []).length;
+        const configNodes = (settings.bestDomains || []).length;
         
         // 转换为前端期望的格式
         res.json({
