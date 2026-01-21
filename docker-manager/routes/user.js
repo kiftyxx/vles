@@ -524,9 +524,25 @@ async function checkin(req, res) {
             milestoneReward = 10;
             rewardDays += milestoneReward;
             message = `🎊 连续签到 30 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
+        } else if (checkinStreak === 60) {
+            milestoneReward = 20;
+            rewardDays += milestoneReward;
+            message = `🏆 连续签到 60 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
+        } else if (checkinStreak === 90) {
+            milestoneReward = 30;
+            rewardDays += milestoneReward;
+            message = `👑 连续签到 90 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
+        } else if (checkinStreak === 180) {
+            milestoneReward = 60;
+            rewardDays += milestoneReward;
+            message = `💎 连续签到 180 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
+        } else if (checkinStreak === 365) {
+            milestoneReward = 120;
+            rewardDays += milestoneReward;
+            message = `🌟 连续签到 365 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
         } else if (checkinStreak % 7 === 0 && checkinStreak > 7) {
-            // 每连续7天额外奖励1天
-            milestoneReward = 1;
+            // 每连续7天额外奖励3天（保持和第一周相同的奖励力度）
+            milestoneReward = 3;
             rewardDays += milestoneReward;
             message = `✨ 连续签到 ${checkinStreak} 天！额外奖励 ${milestoneReward} 天，总共 +${rewardDays} 天`;
         }

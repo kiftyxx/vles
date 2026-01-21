@@ -811,7 +811,7 @@ ${generateWeekCalendar(user.last_checkin, user.checkin_streak || 0)}
 <div class="p-2.5 md:p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded-md">
 <div class="flex items-center gap-2">
 <span class="material-symbols-outlined text-[14px] md:text-[16px] text-slate-600 dark:text-zinc-400">info</span>
-<p class="text-[10px] md:text-xs text-slate-600 dark:text-zinc-400">奖励里程碑：连续签到 7 天额外奖励 3 天时长</p>
+<p class="text-[10px] md:text-xs text-slate-600 dark:text-zinc-400">奖励里程碑：每连续签到 7 天额外奖励 3 天时长（可持续累计）</p>
 </div>
 </div>
 
@@ -936,7 +936,7 @@ ${hasCheckedIn ? '今日已签到' : '立即签到'}
 </div>
 
 <footer class="pt-12 pb-8 text-center border-t border-slate-100 dark:border-zinc-900">
-<p class="text-xs text-slate-400 dark:text-zinc-600">© 2024 ${siteName}. All rights reserved.</p>
+<p class="text-xs text-slate-400 dark:text-zinc-600">© 2026 ${siteName}. All rights reserved.</p>
 </footer>
 </div>
 </main>
