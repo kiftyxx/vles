@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/HendersonBasinger/cccz#readme",
   "devDependencies": {
-    "javascript-obfuscator": "^5.2.1"
+    "javascript-obfuscator": "^5.3.0",
+    "terser": "^5.46.0"
   }
 }
