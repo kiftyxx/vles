@@ -1285,6 +1285,9 @@ function renderAdminPanel() {
                 <button onclick="fetchIPv6BestDomains()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-md hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
                   <span class="material-symbols-outlined text-[18px]">bolt</span> 获取 IPv6 优选
                 </button>
+                <button id="btn-check-nodes" onclick="checkManualNodesNow()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-md hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                  <span class="material-symbols-outlined text-[18px]">network_check</span> 立即检测
+                </button>
                 <div class="flex-1"></div>
                 <button onclick="clearAllBestDomains()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 transition-colors">
                   <span class="material-symbols-outlined text-[18px]">delete_sweep</span> 清空列表
@@ -5673,6 +5676,32 @@ function renderAdminPanel() {
       }
     }
     
+    // 手动节点立即检测
+    async function checkManualNodesNow() {
+      const btn = document.getElementById('btn-check-nodes');
+      const originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> 检测中...';
+      try {
+        const response = await fetch('/api/admin/check-nodes', { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+          const now = new Date();
+          const statusTimeElem = document.getElementById('node-status-time');
+          if (statusTimeElem) statusTimeElem.textContent = '最后检测: ' + now.toLocaleTimeString('zh-CN', { hour12: false });
+          await loadBestDomains();
+          showAlert('检测完成: 共 ' + result.checked + ' 个手动节点，禁用 ' + result.disabled + ' 个，恢复 ' + result.restored + ' 个', 'success');
+        } else {
+          showAlert('检测失败: ' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showAlert('检测失败: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      }
+    }
+
     // 自动保存函数（静默保存，不显示提示）
     async function autoSaveBestDomains() {
       try {
