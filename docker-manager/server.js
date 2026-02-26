@@ -23,6 +23,23 @@ const ADMIN_PATH = process.env.ADMIN_PATH || '/admin';
 // 初始化数据库
 db.initDatabase();
 
+// 拦截 console，同步写入系统日志
+(function patchConsole() {
+    const _log = console.log.bind(console);
+    const _warn = console.warn.bind(console);
+    const _error = console.error.bind(console);
+    function capture(level, args) {
+        const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+        const match = msg.match(/^\[([^\]]+)\]\s*(.*)/);
+        const action = match ? match[1] : '系统';
+        const details = match ? match[2] : msg;
+        try { db.addLog(action, details, level); } catch(e) { /* silent */ }
+    }
+    console.log = function(...args) { _log(...args); capture('info', args); };
+    console.warn = function(...args) { _warn(...args); capture('warning', args); };
+    console.error = function(...args) { _error(...args); capture('error', args); };
+}());
+
 // 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -716,6 +716,11 @@ function renderAdminPanel() {
           <span class="material-symbols-outlined">lock</span>
           <span>修改密码</span>
         </a>
+        
+        <a onclick="switchSection('logs')" class="nav-link flex items-center gap-3 px-3 py-2 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
+          <span class="material-symbols-outlined">receipt_long</span>
+          <span>系统日志</span>
+        </a>
       </nav>
       
       <div class="p-4 border-t border-border-light dark:border-border-dark space-y-2">
@@ -1639,6 +1644,49 @@ function renderAdminPanel() {
             </div>
           </div>
         </div>
+
+        <!-- 系统日志 -->
+        <div id="section-logs" class="section-content">
+          <div class="rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark overflow-hidden">
+            <div class="p-4 border-b border-border-light dark:border-border-dark flex flex-wrap items-center gap-3">
+              <select id="log-level-filter" onchange="loadSystemLogs()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none">
+                <option value="">全部级别</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="success">Success</option>
+              </select>
+              <input id="log-search" type="text" placeholder="搜索关键词..." oninput="renderLogsFiltered()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none flex-1 min-w-[160px]"/>
+              <div class="flex items-center gap-2 ml-auto">
+                <label class="flex items-center gap-1 text-sm cursor-pointer">
+                  <input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh()" class="w-4 h-4"/> 自动刷新
+                </label>
+                <button onclick="loadSystemLogs()" class="flex items-center gap-1 px-3 py-1.5 text-sm border border-border-light dark:border-border-dark rounded-md hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                  <span class="material-symbols-outlined text-[16px]">refresh</span> 刷新
+                </button>
+                <button onclick="clearSystemLogsUI()" class="flex items-center gap-1 px-3 py-1.5 text-sm text-red-500 border border-red-200 dark:border-red-900 rounded-md hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
+                  <span class="material-symbols-outlined text-[16px]">delete_sweep</span> 清空
+                </button>
+              </div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-border-light dark:border-border-dark bg-slate-50 dark:bg-zinc-900">
+                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-40">时间</th>
+                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-24">级别</th>
+                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-36">模块</th>
+                    <th class="px-4 py-2 text-left font-medium text-slate-500">详情</th>
+                  </tr>
+                </thead>
+                <tbody id="log-tbody">
+                  <tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="log-pagination" class="p-3 border-t border-border-light dark:border-border-dark flex items-center justify-between text-sm text-slate-500"></div>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -1709,7 +1757,8 @@ function renderAdminPanel() {
         'announcements': '公告管理',
         'payment': '支付渠道',
         'invites': '邀请码管理',
-        'password': '修改密码'
+        'password': '修改密码',
+        'logs': '系统日志'
       };
       document.getElementById('section-title').textContent = titles[sectionName] || '管理面板';
       
@@ -1726,6 +1775,7 @@ function renderAdminPanel() {
       if (sectionName === 'announcements') loadAllAnnouncements();
       if (sectionName === 'payment') loadAllPaymentChannels();
       if (sectionName === 'invites') loadAllInviteCodes();
+      if (sectionName === 'logs') loadSystemLogs();
     }
     
     // ========== 模态框控制 ==========
@@ -5699,6 +5749,82 @@ function renderAdminPanel() {
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHTML;
+      }
+    }
+
+    // ==================== 系统日志 ====================
+    let _allLogs = [];
+    let _logAutoRefreshTimer = null;
+
+    async function loadSystemLogs() {
+      const level = document.getElementById('log-level-filter')?.value || '';
+      const url = '/api/admin/logs?limit=500' + (level ? '&level=' + level : '');
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        _allLogs = data.logs || [];
+        renderLogsFiltered();
+        const pg = document.getElementById('log-pagination');
+        if (pg) pg.textContent = '共 ' + _allLogs.length + ' 条日志';
+      } catch(e) {
+        const tb = document.getElementById('log-tbody');
+        if (tb) tb.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-red-400">加载失败: ' + e.message + '</td></tr>';
+      }
+    }
+
+    function renderLogsFiltered() {
+      const keyword = (document.getElementById('log-search')?.value || '').toLowerCase();
+      const level = document.getElementById('log-level-filter')?.value || '';
+      let logs = _allLogs;
+      if (level) logs = logs.filter(l => l.level === level);
+      if (keyword) logs = logs.filter(l => (l.action + l.details).toLowerCase().includes(keyword));
+      const tb = document.getElementById('log-tbody');
+      if (!tb) return;
+      if (!logs.length) {
+        tb.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">暂无日志</td></tr>';
+        return;
+      }
+      const levelCfg = {
+        info:    { bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-700 dark:text-blue-300',    label: 'Info' },
+        warning: { bg: 'bg-yellow-100 dark:bg-yellow-900/40', text: 'text-yellow-700 dark:text-yellow-300', label: 'Warn' },
+        error:   { bg: 'bg-red-100 dark:bg-red-900/40',      text: 'text-red-700 dark:text-red-300',      label: 'Error' },
+        success: { bg: 'bg-green-100 dark:bg-green-900/40',  text: 'text-green-700 dark:text-green-300',  label: 'OK' },
+      };
+      tb.innerHTML = logs.map(l => {
+        const cfg = levelCfg[l.level] || levelCfg.info;
+        const t = new Date(l.timestamp).toLocaleString('zh-CN', { hour12: false, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        return '<tr class="border-b border-border-light dark:border-border-dark hover:bg-slate-50 dark:hover:bg-zinc-800/50">'
+          + '<td class="px-4 py-2 text-slate-400 whitespace-nowrap font-mono text-xs">' + t + '</td>'
+          + '<td class="px-4 py-2"><span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium ' + cfg.bg + ' ' + cfg.text + '">' + cfg.label + '</span></td>'
+          + '<td class="px-4 py-2 text-slate-500 whitespace-nowrap">' + escapeHtml(l.action || '') + '</td>'
+          + '<td class="px-4 py-2 break-all">' + escapeHtml(l.details || '') + '</td>'
+          + '</tr>';
+      }).join('');
+      const pg = document.getElementById('log-pagination');
+      if (pg) pg.textContent = '显示 ' + logs.length + ' / ' + _allLogs.length + ' 条';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function clearSystemLogsUI() {
+      if (!confirm('确定清空所有系统日志？')) return;
+      try {
+        const res = await fetch('/api/admin/logs/clear', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { _allLogs = []; renderLogsFiltered(); showAlert('日志已清空', 'success'); }
+        else showAlert('清空失败: ' + (data.error || ''), 'error');
+      } catch(e) { showAlert('请求失败: ' + e.message, 'error'); }
+    }
+
+    function toggleLogAutoRefresh() {
+      const cb = document.getElementById('log-auto-refresh');
+      if (cb?.checked) {
+        _logAutoRefreshTimer = setInterval(loadSystemLogs, 5000);
+      } else {
+        clearInterval(_logAutoRefreshTimer);
+        _logAutoRefreshTimer = null;
       }
     }
 

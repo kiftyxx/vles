@@ -2041,16 +2041,20 @@ function importAllData(req, res) {
 
 // ==================== 系统日志 ====================
 function getSystemLogs(req, res) {
+    if (!validateAdminSession(req)) return res.status(401).json({ error: '未授权' });
     try {
         const limit = parseInt(req.query.limit) || 100;
-        const logs = db.getLogs(limit);
-        res.json({ logs });
+        const level = req.query.level || '';
+        let logs = db.getLogs(limit);
+        if (level) logs = logs.filter(l => l.level === level);
+        res.json({ logs, total: logs.length });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 }
 
 function clearSystemLogs(req, res) {
+    if (!validateAdminSession(req)) return res.status(401).json({ error: '未授权' });
     try {
         db.clearLogs();
         db.addLog('清空日志', '系统日志已清空', 'info');
