@@ -1648,35 +1648,45 @@ function renderAdminPanel() {
         <!-- 系统日志 -->
         <div id="section-logs" class="section-content">
           <div class="rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark overflow-hidden">
-            <div class="p-4 border-b border-border-light dark:border-border-dark flex flex-wrap items-center gap-3">
-              <select id="log-level-filter" onchange="loadSystemLogs()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none">
-                <option value="">全部级别</option>
-                <option value="info">Info</option>
-                <option value="warning">Warning</option>
-                <option value="error">Error</option>
-                <option value="success">Success</option>
-              </select>
-              <input id="log-search" type="text" placeholder="搜索关键词..." oninput="renderLogsFiltered()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none flex-1 min-w-[160px]"/>
-              <div class="flex items-center gap-2 ml-auto">
-                <label class="flex items-center gap-1 text-sm cursor-pointer">
-                  <input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh()" class="w-4 h-4"/> 自动刷新
+            <!-- 工具栏 -->
+            <div class="p-4 border-b border-border-light dark:border-border-dark space-y-2">
+              <!-- 第一行：级别选择 + 搜索框 -->
+              <div class="flex gap-2">
+                <select id="log-level-filter" onchange="loadSystemLogs()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none shrink-0">
+                  <option value="">全部</option>
+                  <option value="info">Info</option>
+                  <option value="warning">Warn</option>
+                  <option value="error">Error</option>
+                  <option value="success">OK</option>
+                </select>
+                <input id="log-search" type="text" placeholder="搜索模块/详情..." oninput="renderLogsFiltered()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none flex-1 min-w-0"/>
+              </div>
+              <!-- 第二行：自动刷新 + 操作按鈕 -->
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                  <input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh()" class="w-4 h-4 shrink-0"/> <span>自动刷新</span>
                 </label>
-                <button onclick="loadSystemLogs()" class="flex items-center gap-1 px-3 py-1.5 text-sm border border-border-light dark:border-border-dark rounded-md hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
-                  <span class="material-symbols-outlined text-[16px]">refresh</span> 刷新
-                </button>
-                <button onclick="clearSystemLogsUI()" class="flex items-center gap-1 px-3 py-1.5 text-sm text-red-500 border border-red-200 dark:border-red-900 rounded-md hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
-                  <span class="material-symbols-outlined text-[16px]">delete_sweep</span> 清空
-                </button>
+                <div class="flex items-center gap-2 ml-auto">
+                  <button onclick="loadSystemLogs()" class="flex items-center gap-1 px-3 py-1.5 text-sm border border-border-light dark:border-border-dark rounded-md hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">refresh</span>
+                    <span class="hidden sm:inline">刷新</span>
+                  </button>
+                  <button onclick="clearSystemLogsUI()" class="flex items-center gap-1 px-3 py-1.5 text-sm text-red-500 border border-red-200 dark:border-red-900 rounded-md hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                    <span class="hidden sm:inline">清空</span>
+                  </button>
+                </div>
               </div>
             </div>
+            <!-- 日志内容 -->
             <div class="overflow-x-auto">
-              <table class="w-full text-sm">
+              <table class="w-full text-sm min-w-[480px]">
                 <thead>
                   <tr class="border-b border-border-light dark:border-border-dark bg-slate-50 dark:bg-zinc-900">
-                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-40">时间</th>
-                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-24">级别</th>
-                    <th class="px-4 py-2 text-left font-medium text-slate-500 w-36">模块</th>
-                    <th class="px-4 py-2 text-left font-medium text-slate-500">详情</th>
+                    <th class="px-3 py-2 text-left font-medium text-slate-500 w-32 hidden sm:table-cell">时间</th>
+                    <th class="px-3 py-2 text-left font-medium text-slate-500 w-16">级别</th>
+                    <th class="px-3 py-2 text-left font-medium text-slate-500 hidden sm:table-cell w-28">模块</th>
+                    <th class="px-3 py-2 text-left font-medium text-slate-500">详情</th>
                   </tr>
                 </thead>
                 <tbody id="log-tbody">
@@ -1684,7 +1694,7 @@ function renderAdminPanel() {
                 </tbody>
               </table>
             </div>
-            <div id="log-pagination" class="p-3 border-t border-border-light dark:border-border-dark flex items-center justify-between text-sm text-slate-500"></div>
+            <div id="log-pagination" class="px-4 py-2.5 border-t border-border-light dark:border-border-dark text-xs text-slate-400"></div>
           </div>
         </div>
       </div>
@@ -5793,11 +5803,13 @@ function renderAdminPanel() {
       tb.innerHTML = logs.map(l => {
         const cfg = levelCfg[l.level] || levelCfg.info;
         const t = new Date(l.timestamp).toLocaleString('zh-CN', { hour12: false, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const tShort = new Date(l.timestamp).toLocaleTimeString('zh-CN', { hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const badge = '<span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium ' + cfg.bg + ' ' + cfg.text + '">' + cfg.label + '</span>';
         return '<tr class="border-b border-border-light dark:border-border-dark hover:bg-slate-50 dark:hover:bg-zinc-800/50">'
-          + '<td class="px-4 py-2 text-slate-400 whitespace-nowrap font-mono text-xs">' + t + '</td>'
-          + '<td class="px-4 py-2"><span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium ' + cfg.bg + ' ' + cfg.text + '">' + cfg.label + '</span></td>'
-          + '<td class="px-4 py-2 text-slate-500 whitespace-nowrap">' + escapeHtml(l.action || '') + '</td>'
-          + '<td class="px-4 py-2 break-all">' + escapeHtml(l.details || '') + '</td>'
+          + '<td class="px-3 py-2 text-slate-400 whitespace-nowrap font-mono text-xs hidden sm:table-cell">' + t + '</td>'
+          + '<td class="px-3 py-2">' + badge + '<span class="block text-[10px] text-slate-400 sm:hidden mt-0.5">' + tShort + '</span></td>'
+          + '<td class="px-3 py-2 text-slate-500 whitespace-nowrap text-xs hidden sm:table-cell">' + escapeHtml(l.action || '') + '</td>'
+          + '<td class="px-3 py-2 break-all text-xs"><span class="sm:hidden text-slate-400 mr-1">[' + escapeHtml(l.action || '') + ']</span>' + escapeHtml(l.details || '') + '</td>'
           + '</tr>';
       }).join('');
       const pg = document.getElementById('log-pagination');
