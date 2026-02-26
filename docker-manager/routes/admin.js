@@ -2097,9 +2097,26 @@ function getStatistics(req, res) {
 // 手动节点存活检测（TCP 连接测试）
 async function checkManualNodes() {
     const net = require('net');
+    const dns = require('dns').promises;
     // 自动抓取节点特征（排除检测）
     const AUTO_PATTERN = /^(\[?[0-9a-fA-F:.]+\]?):443#(v4|v6)(移动|联通|电信|铁通|广电)\s+[A-Z]{3}$/;
     const DISABLED_PREFIX = '___DISABLED___';
+
+    // 判断是否为 IPv6-only 节点（原始 IPv6 地址或仅有 AAAA 记录的域名）
+    async function isIPv6Only(host) {
+        // 原始 IPv6 地址
+        if (net.isIPv6(host)) return true;
+        // 纯 IPv4 地址直接跳过 DNS
+        if (net.isIPv4(host)) return false;
+        // 域名：尝试解析 A 记录，失败则视为 IPv6-only
+        try {
+            const addrs = await dns.resolve4(host);
+            return !addrs || addrs.length === 0;
+        } catch (e) {
+            // ENOTFOUND / ENODATA / ENORECORD 均视为无 IPv4
+            return true;
+        }
+    }
 
     // TCP 连接测试
     function tcpTest(host, port, timeout = 5000) {
@@ -2127,11 +2144,11 @@ async function checkManualNodes() {
             if (!AUTO_PATTERN.test(real)) manualIndexes.push(idx);
         });
 
-        if (manualIndexes.length === 0) return { checked: 0, disabled: 0, restored: 0 };
+        if (manualIndexes.length === 0) return { checked: 0, disabled: 0, restored: 0, skipped: 0 };
         console.log(`[节点检测] 开始检测 ${manualIndexes.length} 个手动节点...`);
 
         const updatedDomains = [...bestDomains];
-        let changed = false, disabledCount = 0, restoredCount = 0;
+        let changed = false, disabledCount = 0, restoredCount = 0, skippedCount = 0;
 
         // 每批 8 个并发
         const BATCH = 8;
@@ -2160,6 +2177,14 @@ async function checkManualNodes() {
                     }
                 }
 
+                // 跳过 IPv6-only 节点（服务器无 IPv6 时无法检测）
+                const v6only = await isIPv6Only(host);
+                if (v6only) {
+                    skippedCount++;
+                    console.log(`[节点检测] 跳过(IPv6): ${addressPart}`);
+                    return;
+                }
+
                 const alive = await tcpTest(host, port);
 
                 if (alive && isDisabled) {
@@ -2180,8 +2205,8 @@ async function checkManualNodes() {
             settings.bestDomains = updatedDomains;
             db.saveSettings(settings);
         }
-        console.log(`[节点检测] 完成: 检测 ${manualIndexes.length} 个，禁用 ${disabledCount} 个，恢复 ${restoredCount} 个`);
-        return { checked: manualIndexes.length, disabled: disabledCount, restored: restoredCount };
+        console.log(`[节点检测] 完成: 检测 ${manualIndexes.length} 个，跳过(IPv6) ${skippedCount} 个，禁用 ${disabledCount} 个，恢复 ${restoredCount} 个`);
+        return { checked: manualIndexes.length, disabled: disabledCount, restored: restoredCount, skipped: skippedCount };
 
     } catch (error) {
         console.error('[节点检测] 执行失败:', error.message);

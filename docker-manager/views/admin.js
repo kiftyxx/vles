@@ -5750,7 +5750,7 @@ function renderAdminPanel() {
           const statusTimeElem = document.getElementById('node-status-time');
           if (statusTimeElem) statusTimeElem.textContent = '最后检测: ' + now.toLocaleTimeString('zh-CN', { hour12: false });
           await loadBestDomains();
-          showAlert('检测完成: 共 ' + result.checked + ' 个手动节点，禁用 ' + result.disabled + ' 个，恢复 ' + result.restored + ' 个', 'success');
+          showAlert('检测完成: 共 ' + result.checked + ' 个手动节点，跳过(IPv6) ' + (result.skipped||0) + ' 个，禁用 ' + result.disabled + ' 个，恢复 ' + result.restored + ' 个', 'success');
         } else {
           showAlert('检测失败: ' + (result.error || '未知错误'), 'error');
         }
