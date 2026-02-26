@@ -1653,11 +1653,11 @@ function renderAdminPanel() {
               <!-- 第一行：级别选择 + 搜索框 -->
               <div class="flex gap-2">
                 <select id="log-level-filter" onchange="loadSystemLogs()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none shrink-0">
-                  <option value="">全部</option>
-                  <option value="info">Info</option>
-                  <option value="warning">Warn</option>
-                  <option value="error">Error</option>
-                  <option value="success">OK</option>
+                  <option value="">全部级别</option>
+                  <option value="info">信息</option>
+                  <option value="warning">警告</option>
+                  <option value="error">错误</option>
+                  <option value="success">成功</option>
                 </select>
                 <input id="log-search" type="text" placeholder="搜索模块/详情..." oninput="renderLogsFiltered()" class="h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-sm outline-none flex-1 min-w-0"/>
               </div>
