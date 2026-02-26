@@ -2090,6 +2090,112 @@ function getStatistics(req, res) {
     }
 }
 
+// 手动节点存活检测（TCP 连接测试）
+async function checkManualNodes() {
+    const net = require('net');
+    // 自动抓取节点特征（排除检测）
+    const AUTO_PATTERN = /^(\[?[0-9a-fA-F:.]+\]?):443#(v4|v6)(移动|联通|电信|铁通|广电)\s+[A-Z]{3}$/;
+    const DISABLED_PREFIX = '___DISABLED___';
+
+    // TCP 连接测试
+    function tcpTest(host, port, timeout = 5000) {
+        return new Promise((resolve) => {
+            const socket = new net.Socket();
+            let resolved = false;
+            const cleanup = () => { if (!resolved) { resolved = true; socket.destroy(); } };
+            socket.setTimeout(timeout);
+            socket.on('connect', () => { if (!resolved) { resolved = true; socket.destroy(); resolve(true); } });
+            socket.on('timeout', () => { cleanup(); resolve(false); });
+            socket.on('error', () => { cleanup(); resolve(false); });
+            try { socket.connect(port, host); } catch (e) { cleanup(); resolve(false); }
+        });
+    }
+
+    try {
+        const settings = db.getSettings() || {};
+        const bestDomains = settings.bestDomains || [];
+        if (bestDomains.length === 0) return { checked: 0, disabled: 0, restored: 0 };
+
+        // 找出手动节点的索引（排除自动抓取节点）
+        const manualIndexes = [];
+        bestDomains.forEach((domain, idx) => {
+            const real = domain.startsWith(DISABLED_PREFIX) ? domain.slice(DISABLED_PREFIX.length) : domain;
+            if (!AUTO_PATTERN.test(real)) manualIndexes.push(idx);
+        });
+
+        if (manualIndexes.length === 0) return { checked: 0, disabled: 0, restored: 0 };
+        console.log(`[节点检测] 开始检测 ${manualIndexes.length} 个手动节点...`);
+
+        const updatedDomains = [...bestDomains];
+        let changed = false, disabledCount = 0, restoredCount = 0;
+
+        // 每批 8 个并发
+        const BATCH = 8;
+        for (let i = 0; i < manualIndexes.length; i += BATCH) {
+            const batch = manualIndexes.slice(i, i + BATCH);
+            await Promise.all(batch.map(async (idx) => {
+                const domain = updatedDomains[idx];
+                const isDisabled = domain.startsWith(DISABLED_PREFIX);
+                const real = isDisabled ? domain.slice(DISABLED_PREFIX.length) : domain;
+
+                // 解析 host:port（支持 IPv6 [::]:port 和域名:port）
+                const addressPart = real.split('#')[0].trim();
+                let host, port;
+                const ipv6Match = addressPart.match(/^\[([^\]]+)\]:?(\d+)?$/);
+                if (ipv6Match) {
+                    host = ipv6Match[1];
+                    port = parseInt(ipv6Match[2]) || 443;
+                } else {
+                    const lastColon = addressPart.lastIndexOf(':');
+                    if (lastColon > 0 && !isNaN(addressPart.slice(lastColon + 1))) {
+                        host = addressPart.slice(0, lastColon);
+                        port = parseInt(addressPart.slice(lastColon + 1));
+                    } else {
+                        host = addressPart;
+                        port = 443;
+                    }
+                }
+
+                const alive = await tcpTest(host, port);
+
+                if (alive && isDisabled) {
+                    updatedDomains[idx] = real;
+                    changed = true;
+                    restoredCount++;
+                    console.log(`[节点检测] 恢复: ${addressPart}`);
+                } else if (!alive && !isDisabled) {
+                    updatedDomains[idx] = DISABLED_PREFIX + real;
+                    changed = true;
+                    disabledCount++;
+                    console.log(`[节点检测] 禁用: ${addressPart}`);
+                }
+            }));
+        }
+
+        if (changed) {
+            settings.bestDomains = updatedDomains;
+            db.saveSettings(settings);
+        }
+        console.log(`[节点检测] 完成: 检测 ${manualIndexes.length} 个，禁用 ${disabledCount} 个，恢复 ${restoredCount} 个`);
+        return { checked: manualIndexes.length, disabled: disabledCount, restored: restoredCount };
+
+    } catch (error) {
+        console.error('[节点检测] 执行失败:', error.message);
+        return { checked: 0, disabled: 0, restored: 0, error: error.message };
+    }
+}
+
+// 手动触发节点检测 API
+async function triggerCheckManualNodes(req, res) {
+    if (!validateAdminSession(req)) return res.status(401).json({ error: '未授权' });
+    try {
+        const result = await checkManualNodes();
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+}
+
 module.exports = {
     login,
     logout,
@@ -2147,5 +2253,7 @@ module.exports = {
     importAllData,
     getSystemLogs,
     clearSystemLogs,
-    getStatistics
+    getStatistics,
+    checkManualNodes,
+    triggerCheckManualNodes
 };

@@ -161,6 +161,7 @@ app.post('/api/admin/import-all', adminRoutes.importAllData);
 app.get('/api/admin/logs', adminRoutes.getSystemLogs);
 app.post('/api/admin/logs/clear', adminRoutes.clearSystemLogs);
 app.get('/api/admin/statistics', adminRoutes.getStatistics);
+app.post('/api/admin/check-nodes', adminRoutes.triggerCheckManualNodes);
 
 // 管理员面板页面
 app.get(`${ADMIN_PATH}*`, async (req, res) => {
@@ -370,6 +371,9 @@ cron.schedule('*/15 * * * *', async () => {
         } catch (error) {
             console.error('[定时检查ProxyIP] 模块加载失败:', error.message);
         }
+
+        // 手动节点存活检测（异步，不阻塞主流程）
+        setImmediate(() => adminRoutes.checkManualNodes());
         
     } catch (error) {
         console.error('[定时任务] 执行失败:', error.message);
