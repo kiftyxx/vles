@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vles-manager:latest
+    image: ghcr.io/kiftyxx/vles/vles-manager:latest
     container_name: vles-manager
     restart: unless-stopped
     ports:
