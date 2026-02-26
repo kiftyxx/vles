@@ -23,15 +23,31 @@
 
 ### 启动方式
 
+**本地开发/调试**（在 codespace 内构建）：
 ```bash
 cd docker-manager
-# 构建镜像并启动（--force-recreate 确保代码变更生效）
 docker compose up -d --build --force-recreate
-# 查看日志
 docker logs -f vles-manager
 ```
 
 > ⚠️ `docker compose restart` 不重建镜像，代码改动不生效，必须用 `--build --force-recreate`
+
+**生产服务器部署**（从 GHCR 拉取，无需源码）：
+```bash
+# 首次部署
+mkdir /opt/vles-manager && cd /opt/vles-manager
+curl -O https://raw.githubusercontent.com/kiftyxx/vles/main/docker-manager/docker-compose.yml
+docker compose pull && docker compose up -d
+
+# 后续更新（代码推送后 CI 自动构建镜像，服务器执行）
+docker compose pull && docker compose up -d
+```
+
+**CI/CD**：GitHub Actions（`.github/workflows/docker-build.yml`）在每次 `git push main` 后自动构建并推送镜像到：
+```
+ghcr.io/kiftyxx/vles/vles-manager:latest
+```
+`docker-compose.yml` 中 `image` 字段已指向该地址。
 
 Docker 日志自动轮转：`max-size: 10m, max-file: 3`（最多 30 MB），无需手动清理。
 
@@ -141,7 +157,7 @@ console.log('Done. Size:', code.length, 'bytes');
 | `Node-Worker.js` | 源码，可读 | 日常修改这个文件 |
 | `Node-Worker.obfuscated.js` | **部署到 Cloudflare** | 每次改完源码重新生成 |
 | `Node-Worker-env.js` | 环境变量版本（未混淆） | 多租户部署用 |
-| `docker-manager/` | 管理面板 Docker 服务 | `docker compose up -d --build --force-recreate` |
+| `docker-manager/` | 管理面板 Docker 服务 | push 后 CI 自动构建，服务器 `docker compose pull && up -d` |
 
 ---
 
@@ -175,6 +191,8 @@ URL 参数 ?proxyip=xxx（最高优先）
 
 | commit | 说明 |
 |--------|------|
+| `f08d6c1` | fix: use GHCR image in docker-compose.yml |
+| `8b2f40c` | docs: update CONTEXT.md |
 | `48924a4` | chore: upgrade better-sqlite3 to v12 for Node.js v24 |
 | `4c9c69b` | fix(nodes): skip IPv6-only nodes in manual health check |
 | `389f9ce` | fix(admin): localize log level filter options to Chinese |
