@@ -3,9 +3,15 @@
  * 参考 CF-Workers-CheckProxyIP 的检测原理
  */
 
-const net = require('net');
 const http = require('http');
-const https = require('https');
+const tls = require('tls');
+
+const PROBE_TARGETS = [
+    { name: 'ipv4', host: 'ipv4.090227.xyz' },
+    { name: 'ipv6', host: 'ipv6.090227.xyz' }
+];
+const PROBE_TIMEOUT = 9999;
+const MAX_RESPONSE_SIZE = 65536;
 
 // 地区映射表
 const REGION_MAP = {
@@ -31,24 +37,14 @@ async function checkProxyIP(proxyIP, port = 443) {
     const startTime = Date.now();
     
     try {
-        // 方法1：尝试连接测试
-        const isConnectable = await testConnection(proxyIP, port);
-        
-        if (!isConnectable) {
-            return {
-                success: false,
-                status: 'failed',
-                responseTime: -1,
-                error: '无法建立连接'
-            };
-        }
-        
-        // 方法2：HTTP 检测（类似 CF-Workers-CheckProxyIP）
-        const httpResult = await testHTTPProxy(proxyIP, port);
-        
+        // 上游使用真实 TLS SNI 和出口探针验证反代，而不是检查 /cdn-cgi/trace 文本。
+        const probeResults = await Promise.all(
+            PROBE_TARGETS.map(target => testProbe(proxyIP, port, target))
+        );
+        const successfulProbe = probeResults.find(result => result.success);
         const responseTime = Date.now() - startTime;
-        
-        if (httpResult.success) {
+
+        if (successfulProbe) {
             // 获取IP地理位置信息
             const geoInfo = await getIPInfo(proxyIP);
             
@@ -68,7 +64,7 @@ async function checkProxyIP(proxyIP, port = 443) {
                 success: false,
                 status: 'failed',
                 responseTime,
-                error: httpResult.error || '代理测试失败'
+                error: probeResults.map(result => result.error).filter(Boolean).join('; ') || '代理测试失败'
             };
         }
         
@@ -83,117 +79,106 @@ async function checkProxyIP(proxyIP, port = 443) {
 }
 
 /**
- * 测试 TCP 连接
+ * 使用上游相同的双探针检测：TLS SNI 必须是探针域名，返回必须是带出口 IP 的 JSON。
  */
-async function testConnection(host, port, timeout = 5000) {
+function testProbe(proxyIP, port, target) {
     return new Promise((resolve) => {
-        const socket = new net.Socket();
-        let isResolved = false;
-        
-        const cleanup = () => {
-            if (!isResolved) {
-                isResolved = true;
-                socket.destroy();
-            }
+        const hostname = String(proxyIP).replace(/^\[|\]$/g, '');
+        const socket = tls.connect({
+            host: hostname,
+            port,
+            servername: target.host,
+            rejectUnauthorized: false,
+            timeout: PROBE_TIMEOUT
+        });
+        const chunks = [];
+        let totalSize = 0;
+        let settled = false;
+
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            resolve(result);
         };
-        
-        socket.setTimeout(timeout);
-        
-        socket.on('connect', () => {
-            if (!isResolved) {
-                isResolved = true;
-                socket.destroy();
-                resolve(true);
+
+        socket.on('secureConnect', () => {
+            const certificate = socket.getPeerCertificate();
+            const certificateError = tls.checkServerIdentity(target.host, certificate);
+            if (certificateError) {
+                finish({ success: false, error: `证书主机名不匹配: ${certificateError.message}` });
+                return;
+            }
+
+            socket.write(
+                `GET / HTTP/1.1\r\nHost: ${target.host}\r\n` +
+                'Accept: application/json, text/plain, */*\r\n' +
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n' +
+                'Accept-Encoding: identity\r\nConnection: close\r\n\r\n'
+            );
+        });
+
+        socket.on('data', (chunk) => {
+            totalSize += chunk.length;
+            if (totalSize <= MAX_RESPONSE_SIZE) chunks.push(chunk);
+            if (totalSize > MAX_RESPONSE_SIZE) {
+                finish({ success: false, error: '响应超过大小限制' });
             }
         });
-        
-        socket.on('timeout', () => {
-            cleanup();
-            resolve(false);
+
+        socket.on('end', () => {
+            if (settled) return;
+            try {
+                const raw = Buffer.concat(chunks);
+                const separator = raw.indexOf('\r\n\r\n');
+                const header = (separator < 0 ? raw : raw.subarray(0, separator)).toString('latin1');
+                const status = Number((header.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/m) || [])[1]);
+                let body = separator < 0 ? Buffer.alloc(0) : raw.subarray(separator + 4);
+                if (/\r\ntransfer-encoding:\s*chunked\r\n/i.test(`\r\n${header}\r\n`)) {
+                    body = decodeChunkedBody(body);
+                }
+                if (status !== 200) {
+                    finish({ success: false, error: `响应状态异常: ${status || 'unknown'}` });
+                    return;
+                }
+                const payload = JSON.parse(body.toString('utf8'));
+                const exitIP = payload && payload.ip || payload && payload.ipAddress;
+                if (typeof exitIP !== 'string' || !exitIP) {
+                    finish({ success: false, error: '探针响应缺少出口 IP' });
+                    return;
+                }
+                finish({ success: isMatchingFamily(exitIP, target.name), exitIP });
+            } catch (error) {
+                finish({ success: false, error: error.message });
+            }
         });
-        
-        socket.on('error', () => {
-            cleanup();
-            resolve(false);
-        });
-        
-        try {
-            socket.connect(port, host);
-        } catch (e) {
-            cleanup();
-            resolve(false);
-        }
+
+        socket.on('timeout', () => finish({ success: false, error: '检测超时' }));
+        socket.on('error', (error) => finish({ success: false, error: error.message }));
     });
 }
 
-/**
- * HTTP 代理测试（模拟 CF-Workers-CheckProxyIP 的方法）
- */
-async function testHTTPProxy(proxyIP, port) {
-    return new Promise((resolve) => {
-        const options = {
-            hostname: proxyIP,
-            port: port,
-            path: '/cdn-cgi/trace',
-            method: 'GET',
-            headers: {
-                'Host': 'speed.cloudflare.com',
-                'User-Agent': 'ProxyIP-Checker/1.0'
-            },
-            timeout: 10000
-        };
-        
-        const protocol = port === 443 ? https : http;
-        
-        const req = protocol.request(options, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                // 检查是否是 Cloudflare 的响应
-                const isCloudflare = data.includes('cloudflare') || 
-                                   data.includes('colo=') ||
-                                   res.headers['cf-ray'] !== undefined;
-                
-                // 即使是 400 错误，如果是 Cloudflare 返回的也算成功
-                const isExpectedError = res.statusCode === 400 && 
-                                       data.includes('Bad Request') &&
-                                       data.includes('HTTPS');
-                
-                if (isCloudflare || isExpectedError) {
-                    resolve({
-                        success: true,
-                        statusCode: res.statusCode
-                    });
-                } else {
-                    resolve({
-                        success: false,
-                        error: `Invalid response: ${res.statusCode}`
-                    });
-                }
-            });
-        });
-        
-        req.on('error', (error) => {
-            resolve({
-                success: false,
-                error: error.message
-            });
-        });
-        
-        req.on('timeout', () => {
-            req.destroy();
-            resolve({
-                success: false,
-                error: 'Request timeout'
-            });
-        });
-        
-        req.end();
-    });
+function decodeChunkedBody(body) {
+    const chunks = [];
+    let offset = 0;
+    while (offset < body.length) {
+        const lineEnd = body.indexOf('\r\n', offset);
+        if (lineEnd < 0) throw new Error('分块响应格式错误');
+        const size = parseInt(body.subarray(offset, lineEnd).toString('ascii').split(';', 1)[0], 16);
+        if (!Number.isFinite(size)) throw new Error('分块大小无效');
+        if (size === 0) break;
+        const start = lineEnd + 2;
+        const end = start + size;
+        if (end + 2 > body.length) throw new Error('分块响应不完整');
+        chunks.push(body.subarray(start, end));
+        offset = end + 2;
+    }
+    return Buffer.concat(chunks);
+}
+
+function isMatchingFamily(ip, family) {
+    if (family === 'ipv4') return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && ip.split('.').every(part => Number(part) <= 255);
+    return ip.includes(':');
 }
 
 /**
