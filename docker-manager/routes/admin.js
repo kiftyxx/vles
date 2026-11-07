@@ -2192,7 +2192,11 @@ async function checkManualNodes() {
             if (!data || !Array.isArray(data.results)) return null;
             let cnOk = 0, cnFail = 0, ovOk = 0, ovFail = 0;
             for (const res of data.results) {
-                const ok = res && res.result && res.result.status === 'finished';
+                // 连通判据：拿到 HTTP 响应（status=finished），或 TCP 已建连
+                // （timings.tcp 有值）——SSH 等非 HTTP 服务 status 为 failed
+                // 但 TCP 能连上，同样算目标端口可达。
+                const r0 = res && res.result;
+                const ok = !!r0 && (r0.status === 'finished' || (r0.timings && r0.timings.tcp != null));
                 if (res && res.probe && res.probe.country === 'CN') { ok ? cnOk++ : cnFail++; }
                 else if (res && res.probe) { ok ? ovOk++ : ovFail++; }
             }
