@@ -2148,7 +2148,58 @@ async function checkManualNodes() {
             const d = await resp.json();
             const gfw = d && d['GFW检测'];
             if (!gfw) return null;
-            return { gfw, rate: (d['大陆三网统计'] && d['大陆三网统计']['综合连通率']) || '' };
+            return { gfw, rate: (d['大陆三网统计'] && d['大陆三网统计']['综合连通率']) || '', src: '776771' };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // 备用大陆视角检测（Globalping）：776771 不可用时的第二判据。
+    // Globalping 在大陆有真实探针（移动/联通/电信 eyeball 与云厂商节点），
+    // 用 HTTP 测量打目标端口：CF 前置端点对明文 HTTP 回 400 也算连通证据。
+    // 判定从严：大陆探针 ≥1 个拿到 HTTP 响应＝未被墙；海外探针能通而大陆 ≥3 个
+    // 探针全失败＝已被墙；全部探针都失败＝海外离线；其余情况（含被限流、
+    // 探针不足）返回 null，继续回退 TCP，绝不凭备用源的不确定结果禁用节点。
+    async function gpProbe(host, port) {
+        const base = 'https://api.globalping.io/v1/measurements';
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 20000);
+            const resp = await fetch(base, {
+                method: 'POST',
+                signal: ctrl.signal,
+                headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+                body: JSON.stringify({
+                    type: 'http',
+                    target: host,
+                    measurementOptions: { port, protocol: 'HTTP', request: { method: 'GET', path: '/' } },
+                    locations: [{ country: 'CN', limit: 5 }, { country: 'DE', limit: 2 }, { country: 'US', limit: 2 }]
+                })
+            });
+            clearTimeout(timer);
+            if (!resp.ok) return null;
+            const created = await resp.json();
+            if (!created || !created.id) return null;
+            let data = null;
+            for (let i = 0; i < 15; i++) {
+                await new Promise(r => setTimeout(r, 3000));
+                const poll = await fetch(`${base}/${created.id}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                if (!poll.ok) return null;
+                data = await poll.json();
+                if (data && data.status === 'finished') break;
+                data = null;
+            }
+            if (!data || !Array.isArray(data.results)) return null;
+            let cnOk = 0, cnFail = 0, ovOk = 0, ovFail = 0;
+            for (const res of data.results) {
+                const ok = res && res.result && res.result.status === 'finished';
+                if (res && res.probe && res.probe.country === 'CN') { ok ? cnOk++ : cnFail++; }
+                else if (res && res.probe) { ok ? ovOk++ : ovFail++; }
+            }
+            if (cnOk >= 1) return { gfw: '未被墙', rate: '', src: 'globalping' };
+            if (ovOk >= 1 && cnFail >= 3) return { gfw: '已被墙', rate: '', src: 'globalping' };
+            if (ovOk === 0 && cnFail >= 3 && ovFail >= 1) return { gfw: '海外离线', rate: '', src: 'globalping' };
+            return null;
         } catch (e) {
             return null;
         }
@@ -2211,7 +2262,8 @@ async function checkManualNodes() {
                 // 「已被墙」「海外离线」视为不可用；「未被墙」视为可用；
                 // 「局部丢包」「单网阻断」等中间状态不翻转现有状态，防抖动误杀；
                 // 776771 不可用时回退本机 TCP 直连结果。
-                const probe = await gfwProbe(host, port);
+                let probe = await gfwProbe(host, port);
+                if (!probe) probe = await gpProbe(host, port);
                 let alive;
                 if (probe) {
                     if (probe.gfw === '未被墙') alive = true;
@@ -2225,12 +2277,12 @@ async function checkManualNodes() {
                     updatedDomains[idx] = real;
                     changed = true;
                     restoredCount++;
-                    console.log(`[节点检测] 恢复: ${addressPart}${probe ? ` (GFW ${probe.gfw}/${probe.rate})` : ' (TCP)'}`);
+                    console.log(`[节点检测] 恢复: ${addressPart}${probe ? ` (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})` : ' (TCP)'}`);
                 } else if (!alive && !isDisabled) {
                     updatedDomains[idx] = DISABLED_PREFIX + real;
                     changed = true;
                     disabledCount++;
-                    console.log(`[节点检测] 禁用: ${addressPart}${probe ? ` (GFW ${probe.gfw}/${probe.rate})` : ' (TCP)'}`);
+                    console.log(`[节点检测] 禁用: ${addressPart}${probe ? ` (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})` : ' (TCP)'}`);
                 }
             }));
         }
