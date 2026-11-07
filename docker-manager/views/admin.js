@@ -6040,7 +6040,14 @@ function renderAdminPanel() {
       if (typeof domainObj === 'string') {
         currentBestDomains[index] = newAddress;
       } else {
+        // 人工更新了节点地址（IP/端口变化）时视为重新启用，不继承旧的禁用标记；
+        // 仅改别名时保留原启用状态。
+        const oldHostPort = (domainObj.address || '').split('#')[0];
+        const newHostPort = newAddress.split('#')[0];
         domainObj.address = newAddress;
+        if (oldHostPort !== newHostPort) {
+          domainObj.enabled = true;
+        }
       }
       
       renderBestDomainsList();

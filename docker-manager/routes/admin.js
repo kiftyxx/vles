@@ -2132,6 +2132,28 @@ async function checkManualNodes() {
         });
     }
 
+    // 大陆视角检测（776771）：面板服务器在境外，TCP 直连通≠大陆可用
+    // （被墙节点从境外照样连得上），故存活判定以 GFW 检测结论为准；
+    // 接口不可用/超时返回 null，调用方回退 TCP 结果，绝不凭接口故障禁用节点。
+    async function gfwProbe(host, port, timeout = 20000) {
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), timeout);
+            const resp = await fetch(`https://776771.xyz/ip=${encodeURIComponent(host + ':' + port)}`, {
+                signal: ctrl.signal,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            clearTimeout(timer);
+            if (!resp.ok) return null;
+            const d = await resp.json();
+            const gfw = d && d['GFW检测'];
+            if (!gfw) return null;
+            return { gfw, rate: (d['大陆三网统计'] && d['大陆三网统计']['综合连通率']) || '' };
+        } catch (e) {
+            return null;
+        }
+    }
+
     try {
         const settings = db.getSettings() || {};
         const bestDomains = settings.bestDomains || [];
@@ -2185,25 +2207,49 @@ async function checkManualNodes() {
                     return;
                 }
 
-                const alive = await tcpTest(host, port);
+                // 判定口径：优先大陆视角（776771 GFW 结论）——
+                // 「已被墙」「海外离线」视为不可用；「未被墙」视为可用；
+                // 「局部丢包」「单网阻断」等中间状态不翻转现有状态，防抖动误杀；
+                // 776771 不可用时回退本机 TCP 直连结果。
+                const probe = await gfwProbe(host, port);
+                let alive;
+                if (probe) {
+                    if (probe.gfw === '未被墙') alive = true;
+                    else if (probe.gfw === '已被墙' || probe.gfw === '海外离线') alive = false;
+                    else alive = !isDisabled;
+                } else {
+                    alive = await tcpTest(host, port);
+                }
 
                 if (alive && isDisabled) {
                     updatedDomains[idx] = real;
                     changed = true;
                     restoredCount++;
-                    console.log(`[节点检测] 恢复: ${addressPart}`);
+                    console.log(`[节点检测] 恢复: ${addressPart}${probe ? ` (GFW ${probe.gfw}/${probe.rate})` : ' (TCP)'}`);
                 } else if (!alive && !isDisabled) {
                     updatedDomains[idx] = DISABLED_PREFIX + real;
                     changed = true;
                     disabledCount++;
-                    console.log(`[节点检测] 禁用: ${addressPart}`);
+                    console.log(`[节点检测] 禁用: ${addressPart}${probe ? ` (GFW ${probe.gfw}/${probe.rate})` : ' (TCP)'}`);
                 }
             }));
         }
 
         if (changed) {
-            settings.bestDomains = updatedDomains;
-            db.saveSettings(settings);
+            // 写回前重读最新设置，避免整表覆盖检测期间管理员的修改（丢失更新竞态）：
+            // 仅当某条目的真实地址与本轮快照一致时，才套用本轮的禁用/恢复结果；
+            // 期间被改过地址的条目保留管理员的新值，跳过本轮结果。
+            const fresh = db.getSettings() || {};
+            const freshDomains = Array.isArray(fresh.bestDomains) ? [...fresh.bestDomains] : [];
+            const stripPrefix = (s) => (typeof s === 'string' && s.startsWith(DISABLED_PREFIX)) ? s.slice(DISABLED_PREFIX.length) : s;
+            for (const idx of manualIndexes) {
+                if (idx >= freshDomains.length) continue;
+                if (typeof freshDomains[idx] !== 'string' || typeof bestDomains[idx] !== 'string') continue;
+                if (stripPrefix(freshDomains[idx]) !== stripPrefix(bestDomains[idx])) continue;
+                freshDomains[idx] = updatedDomains[idx];
+            }
+            fresh.bestDomains = freshDomains;
+            db.saveSettings(fresh);
         }
         console.log(`[节点检测] 完成: 检测 ${manualIndexes.length} 个，跳过(IPv6) ${skippedCount} 个，禁用 ${disabledCount} 个，恢复 ${restoredCount} 个`);
         return { checked: manualIndexes.length, disabled: disabledCount, restored: restoredCount, skipped: skippedCount };
