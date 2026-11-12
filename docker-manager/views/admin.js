@@ -527,6 +527,15 @@ function renderAdminPanel() {
       .hide-mobile {
         display: none;
       }
+      /* 弹窗卡片限高可滚，避免矮屏溢出 */
+      #modal-overlay > div, #sub-link-modal > div,
+      #custom-alert-overlay > div, #custom-confirm-overlay > div {
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+      }
+      .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+      }
     }
     /* 拖拽排序样式 */
     .draggable-row {
@@ -559,7 +568,7 @@ function renderAdminPanel() {
 <body class="bg-background-light dark:bg-background-dark text-slate-950 dark:text-slate-50 transition-colors duration-200">
   
   <!-- 自定义Alert弹窗 -->
-  <div id="custom-alert-overlay" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div id="custom-alert-overlay" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-200">
     <div class="bg-white dark:bg-zinc-950 w-full max-w-md rounded-lg border border-slate-200 dark:border-zinc-800 shadow-xl transform scale-95 transition-all duration-200">
       <div class="p-6">
         <div class="flex items-start gap-4 mb-4">
@@ -581,7 +590,7 @@ function renderAdminPanel() {
   </div>
   
   <!-- 自定义Confirm弹窗 -->
-  <div id="custom-confirm-overlay" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div id="custom-confirm-overlay" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-200">
     <div class="bg-white dark:bg-zinc-950 w-full max-w-md rounded-lg border border-slate-200 dark:border-zinc-800 shadow-xl transform scale-95 transition-all duration-200">
       <div class="p-6">
         <div class="flex items-start gap-4 mb-6">
@@ -606,7 +615,7 @@ function renderAdminPanel() {
   </div>
   
   <!-- 订阅链接弹窗 -->
-  <div id="sub-link-modal" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200">
+  <div id="sub-link-modal" class="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-200">
     <div class="bg-white dark:bg-zinc-950 w-full max-w-2xl rounded-lg border border-slate-200 dark:border-zinc-800 shadow-xl transform scale-95 transition-all duration-200">
       <div class="p-6">
         <div class="flex items-center justify-between mb-4">
@@ -616,7 +625,7 @@ function renderAdminPanel() {
           </button>
         </div>
         <p class="text-sm text-slate-600 dark:text-zinc-400 mb-4">请选择您的客户端类型，系统将自动复制对应的订阅链接</p>
-        <div class="grid grid-cols-3 gap-3" id="sub-link-buttons">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" id="sub-link-buttons">
           <!-- 动态生成按钮 -->
         </div>
       </div>
@@ -624,7 +633,7 @@ function renderAdminPanel() {
   </div>
   
   <!-- 全局模态框 -->
-  <div id="modal-overlay" class="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300">
+  <div id="modal-overlay" class="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-300">
     <div id="modal-content" class="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 w-full max-w-2xl mx-4 rounded-xl shadow-none overflow-hidden transform scale-95 transition-all duration-300">
       <div class="px-6 py-6 pb-2">
         <div class="flex items-center justify-between">
@@ -1058,7 +1067,7 @@ function renderAdminPanel() {
 
           <!-- 用户列表 -->
           <section class="space-y-6">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 class="text-2xl font-semibold tracking-tight">用户列表 (<span id="user-count">0</span>)</h2>
                 <p class="text-sm text-muted-light mt-1">管理现有的用户及其订阅状态</p>
@@ -1066,7 +1075,7 @@ function renderAdminPanel() {
               <div class="flex items-center gap-2">
                 <div class="relative">
                   <span class="material-symbols-outlined absolute left-3 top-2 text-muted-light text-sm">search</span>
-                  <input id="search-input" type="text" placeholder="搜索UUID或备注..." onkeyup="filterUsers()" class="h-9 w-[250px] pl-9 pr-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-xs focus:ring-1 focus:ring-primary outline-none"/>
+                  <input id="search-input" type="text" placeholder="搜索UUID或备注..." onkeyup="filterUsers()" class="h-9 w-full sm:w-[250px] pl-9 pr-3 rounded-md border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark text-xs focus:ring-1 focus:ring-primary outline-none"/>
                 </div>
               </div>
             </div>
@@ -1165,7 +1174,7 @@ function renderAdminPanel() {
               </div>
               
               <!-- 统计卡片 -->
-              <div class="grid grid-cols-4 gap-4">
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="p-4 rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-xs font-medium text-slate-500 dark:text-zinc-400">总数</span>
@@ -1212,7 +1221,7 @@ function renderAdminPanel() {
               </div>
               
               <!-- ProxyIP 列表表格 -->
-              <div class="rounded-lg border border-slate-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950">
+              <div class="rounded-lg border border-slate-200 dark:border-zinc-800 overflow-x-auto bg-white dark:bg-zinc-950">
                 <table class="w-full text-sm">
                   <thead class="bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800">
                     <tr>
@@ -3917,7 +3926,7 @@ function renderAdminPanel() {
           '<label class="text-sm font-medium">套餐名称</label>' +
           '<input id="edit-plan-name" type="text" value="' + plan.name + '" class="w-full h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-primary">' +
         '</div>' +
-        '<div class="grid grid-cols-2 gap-4">' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
           '<div class="space-y-2">' +
             '<label class="text-sm font-medium">时长 (天)</label>' +
             '<input id="edit-plan-duration" type="number" min="1" value="' + plan.duration_days + '" class="w-full h-9 px-3 rounded-md border border-border-light dark:border-border-dark bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-primary">' +
@@ -4425,7 +4434,7 @@ function renderAdminPanel() {
       const paidTime = order.paid_at ? new Date(order.paid_at).toLocaleString('zh-CN') : '-';
       
       const bodyHtml = '<div class="space-y-4">' +
-        '<div class="grid grid-cols-2 gap-4">' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
           '<div class="space-y-2">' +
             '<label class="text-xs font-medium text-slate-500">订单ID</label>' +
             '<div class="text-sm font-mono">#' + order.id + '</div>' +
@@ -4450,7 +4459,7 @@ function renderAdminPanel() {
           '<label class="text-xs font-medium text-slate-500">金额</label>' +
           '<div class="text-sm font-medium">¥' + parseFloat(order.price || 0).toFixed(2) + '</div>' +
         '</div>' +
-        '<div class="grid grid-cols-2 gap-4">' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
           '<div class="space-y-2">' +
             '<label class="text-xs font-medium text-slate-500">创建时间</label>' +
             '<div class="text-sm text-slate-600 dark:text-slate-400">' + createdTime + '</div>' +
@@ -5253,7 +5262,7 @@ function renderAdminPanel() {
           '<label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for="edit-invite-code">邀请码</label>' +
           '<input id="edit-invite-code" type="text" value="' + (invite.code || '').replace(/"/g, '&quot;') + '" class="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:ring-offset-zinc-950 dark:placeholder:text-zinc-400 dark:focus-visible:ring-white"/>' +
         '</div>' +
-        '<div class="grid grid-cols-2 gap-4">' +
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
           '<div class="space-y-2">' +
             '<label class="text-sm font-medium leading-none" for="edit-invite-max-uses">可使用次数</label>' +
             '<input id="edit-invite-max-uses" type="number" min="1" value="' + invite.max_uses + '" class="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 dark:border-zinc-800 dark:bg-zinc-950 dark:ring-offset-zinc-950 dark:focus-visible:ring-white"/>' +
