@@ -968,6 +968,10 @@ function renderAdminPanel() {
                     <label class="text-xs text-slate-400 mb-1 block">Secret Key (后端密钥)</label>
                     <input id="input-turnstileSecretKey" class="w-full px-3 py-2 bg-transparent border border-slate-200 dark:border-slate-800 rounded-md text-sm font-mono" type="text" placeholder="1x0000000000000000000000000000000AA"/>
                   </div>
+                  <div>
+                    <label class="text-xs text-slate-400 mb-1 block">Globalping API Token (节点检测备用判据)</label>
+                    <input id="input-globalpingToken" class="w-full px-3 py-2 bg-transparent border border-slate-200 dark:border-slate-800 rounded-md text-sm font-mono" type="text" placeholder="在 dash.globalping.io 生成；留空则匿名调用（额度低）"/>
+                  </div>
                   <div class="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30 rounded-md">
                     <span class="material-symbols-outlined text-blue-600 dark:text-blue-400 text-base mt-0.5">info</span>
                     <div class="flex-1">
@@ -6420,6 +6424,9 @@ function renderAdminPanel() {
           if (document.getElementById('input-turnstileSecretKey')) {
             document.getElementById('input-turnstileSecretKey').value = settings.turnstileSecretKey || '';
           }
+          if (document.getElementById('input-globalpingToken')) {
+            document.getElementById('input-globalpingToken').value = settings.globalpingToken || '';
+          }
           
           // 加载仪表盘快捷操作开关
           const toggleRequireInvite = document.getElementById('toggle-require-invite');
@@ -6487,6 +6494,8 @@ function renderAdminPanel() {
             if (enableTurnstile) settings.enableTurnstile = enableTurnstile.checked;
             if (turnstileSiteKey) settings.turnstileSiteKey = turnstileSiteKey.value.trim();
             if (turnstileSecretKey) settings.turnstileSecretKey = turnstileSecretKey.value.trim();
+            const globalpingToken = document.getElementById('input-globalpingToken');
+            if (globalpingToken) settings.globalpingToken = globalpingToken.value.trim();
             
             const response = await fetch('/api/admin/updateSystemSettings', {
               method: 'POST',
@@ -6531,7 +6540,8 @@ function renderAdminPanel() {
         'input-autoCleanupDays',
         'input-apiToken',
         'input-turnstileSiteKey',
-        'input-turnstileSecretKey'
+        'input-turnstileSecretKey',
+        'input-globalpingToken'
       ];
       
       inputs.forEach(id => {

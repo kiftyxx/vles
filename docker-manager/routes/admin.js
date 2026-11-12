@@ -446,6 +446,7 @@ function getSystemSettings(req, res) {
                 enableTurnstile: settings.enableTurnstile !== undefined ? settings.enableTurnstile : false,
                 turnstileSiteKey: settings.turnstileSiteKey || '',
                 turnstileSecretKey: settings.turnstileSecretKey || '',
+                globalpingToken: settings.globalpingToken || '',
                 proxyIPs: settings.proxyIPs || [],
                 bestDomains: settings.bestDomains || []
             }
@@ -616,6 +617,9 @@ function updateSystemSettings(req, res) {
         }
         if (body.turnstileSecretKey !== undefined) {
             currentSettings.turnstileSecretKey = body.turnstileSecretKey || '';
+        }
+        if (body.globalpingToken !== undefined) {
+            currentSettings.globalpingToken = body.globalpingToken || '';
         }
         
         db.saveSettings(currentSettings);
@@ -2094,7 +2098,7 @@ function getStatistics(req, res) {
     }
 }
 
-// 手动节点存活检测（TCP 连接测试）
+// 手动节点存活检测（大陆视角外部双源判定：776771 + Globalping）
 async function checkManualNodes() {
     const net = require('net');
     const dns = require('dns').promises;
@@ -2118,23 +2122,10 @@ async function checkManualNodes() {
         }
     }
 
-    // TCP 连接测试
-    function tcpTest(host, port, timeout = 5000) {
-        return new Promise((resolve) => {
-            const socket = new net.Socket();
-            let resolved = false;
-            const cleanup = () => { if (!resolved) { resolved = true; socket.destroy(); } };
-            socket.setTimeout(timeout);
-            socket.on('connect', () => { if (!resolved) { resolved = true; socket.destroy(); resolve(true); } });
-            socket.on('timeout', () => { cleanup(); resolve(false); });
-            socket.on('error', () => { cleanup(); resolve(false); });
-            try { socket.connect(port, host); } catch (e) { cleanup(); resolve(false); }
-        });
-    }
-
     // 大陆视角检测（776771）：面板服务器在境外，TCP 直连通≠大陆可用
     // （被墙节点从境外照样连得上），故存活判定以 GFW 检测结论为准；
-    // 接口不可用/超时返回 null，调用方回退 TCP 结果，绝不凭接口故障禁用节点。
+    // 接口不可用/超时返回 null，调用方改用 Globalping 备用判据；两源都无结论
+    // 时保持节点现状，绝不凭接口故障或本机直连结果禁用节点。
     async function gfwProbe(host, port, timeout = 20000) {
         try {
             const ctrl = new AbortController();
@@ -2159,8 +2150,8 @@ async function checkManualNodes() {
     // 用 HTTP 测量打目标端口：CF 前置端点对明文 HTTP 回 400 也算连通证据。
     // 判定从严：大陆探针 ≥1 个拿到 HTTP 响应＝未被墙；海外探针能通而大陆 ≥3 个
     // 探针全失败＝已被墙；全部探针都失败＝海外离线；其余情况（含被限流、
-    // 探针不足）返回 null，继续回退 TCP，绝不凭备用源的不确定结果禁用节点。
-    async function gpProbe(host, port) {
+    // 探针不足）返回 null，调用方保持节点现状，绝不凭备用源的不确定结果禁用节点。
+    async function gpProbe(host, port, gpToken) {
         const base = 'https://api.globalping.io/v1/measurements';
         try {
             const ctrl = new AbortController();
@@ -2168,7 +2159,7 @@ async function checkManualNodes() {
             const resp = await fetch(base, {
                 method: 'POST',
                 signal: ctrl.signal,
-                headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+                headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0', ...(gpToken ? { 'Authorization': 'Bearer ' + gpToken } : {}) },
                 body: JSON.stringify({
                     type: 'http',
                     target: host,
@@ -2183,7 +2174,7 @@ async function checkManualNodes() {
             let data = null;
             for (let i = 0; i < 15; i++) {
                 await new Promise(r => setTimeout(r, 3000));
-                const poll = await fetch(`${base}/${created.id}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                const poll = await fetch(`${base}/${created.id}`, { headers: { 'User-Agent': 'Mozilla/5.0', ...(gpToken ? { 'Authorization': 'Bearer ' + gpToken } : {}) } });
                 if (!poll.ok) return null;
                 data = await poll.json();
                 if (data && data.status === 'finished') break;
@@ -2226,6 +2217,9 @@ async function checkManualNodes() {
 
         const updatedDomains = [...bestDomains];
         let changed = false, disabledCount = 0, restoredCount = 0, skippedCount = 0;
+        const gpToken = (settings.globalpingToken || '').trim();
+        const badStreak = (settings.nodeBadStreak && typeof settings.nodeBadStreak === 'object') ? settings.nodeBadStreak : {};
+        const streakUpdates = new Map();
 
         // 每批 8 个并发
         const BATCH = 8;
@@ -2262,36 +2256,43 @@ async function checkManualNodes() {
                     return;
                 }
 
-                // 判定口径：优先大陆视角（776771 GFW 结论）——
-                // 「已被墙」「海外离线」视为不可用；「未被墙」视为可用；
-                // 「局部丢包」「单网阻断」等中间状态不翻转现有状态，防抖动误杀；
-                // 776771 不可用时回退本机 TCP 直连结果。
+                // 判定口径：只认大陆视角两个外部源（776771 优先、Globalping 备用），
+                // 绝不用面板服务器本机 IP 直连判定存活（境外直连通≠大陆可用，且部分
+                // 服务商屏蔽机房 IP 会误杀）。两源都无结论、或结论为「局部丢包」
+                // 「单网阻断」等中间状态时，保持现状不翻转。
+                // 防抖：坏结论须连续 2 轮才禁用（单轮抽样抖动不杀节点）；恢复立即生效。
                 let probe = await gfwProbe(host, port);
-                if (!probe) probe = await gpProbe(host, port);
-                let alive;
+                if (!probe) probe = await gpProbe(host, port, gpToken);
+                let verdict = null; // true=可用 false=不可用 null=无结论/中间状态
                 if (probe) {
-                    if (probe.gfw === '未被墙') alive = true;
-                    else if (probe.gfw === '已被墙' || probe.gfw === '海外离线') alive = false;
-                    else alive = !isDisabled;
-                } else {
-                    alive = await tcpTest(host, port);
+                    if (probe.gfw === '未被墙') verdict = true;
+                    else if (probe.gfw === '已被墙' || probe.gfw === '海外离线') verdict = false;
                 }
 
-                if (alive && isDisabled) {
-                    updatedDomains[idx] = real;
-                    changed = true;
-                    restoredCount++;
-                    console.log(`[节点检测] 恢复: ${addressPart}${probe ? ` (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})` : ' (TCP)'}`);
-                } else if (!alive && !isDisabled) {
-                    updatedDomains[idx] = DISABLED_PREFIX + real;
-                    changed = true;
-                    disabledCount++;
-                    console.log(`[节点检测] 禁用: ${addressPart}${probe ? ` (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})` : ' (TCP)'}`);
+                if (verdict === true) {
+                    streakUpdates.set(real, 0);
+                    if (isDisabled) {
+                        updatedDomains[idx] = real;
+                        changed = true;
+                        restoredCount++;
+                        console.log(`[节点检测] 恢复: ${addressPart} (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})`);
+                    }
+                } else if (verdict === false) {
+                    const streak = (badStreak[real] || 0) + 1;
+                    streakUpdates.set(real, streak);
+                    if (!isDisabled && streak >= 2) {
+                        updatedDomains[idx] = DISABLED_PREFIX + real;
+                        changed = true;
+                        disabledCount++;
+                        console.log(`[节点检测] 禁用: ${addressPart} (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''}，连续 ${streak} 轮)`);
+                    } else if (!isDisabled) {
+                        console.log(`[节点检测] 坏结论 ${streak}/2，暂不禁用: ${addressPart} (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})`);
+                    }
                 }
             }));
         }
 
-        if (changed) {
+        if (changed || streakUpdates.size > 0) {
             // 写回前重读最新设置，避免整表覆盖检测期间管理员的修改（丢失更新竞态）：
             // 仅当某条目的真实地址与本轮快照一致时，才套用本轮的禁用/恢复结果；
             // 期间被改过地址的条目保留管理员的新值，跳过本轮结果。
@@ -2305,6 +2306,13 @@ async function checkManualNodes() {
                 freshDomains[idx] = updatedDomains[idx];
             }
             fresh.bestDomains = freshDomains;
+            const nextStreak = { ...((fresh.nodeBadStreak && typeof fresh.nodeBadStreak === 'object') ? fresh.nodeBadStreak : {}) };
+            for (const [addr, n] of streakUpdates) {
+                if (n <= 0) delete nextStreak[addr]; else nextStreak[addr] = n;
+            }
+            const liveAddrs = new Set(freshDomains.map(stripPrefix));
+            for (const k of Object.keys(nextStreak)) if (!liveAddrs.has(k)) delete nextStreak[k];
+            fresh.nodeBadStreak = nextStreak;
             db.saveSettings(fresh);
         }
         console.log(`[节点检测] 完成: 检测 ${manualIndexes.length} 个，跳过(IPv6) ${skippedCount} 个，禁用 ${disabledCount} 个，恢复 ${restoredCount} 个`);
