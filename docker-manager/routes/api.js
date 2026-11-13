@@ -45,10 +45,19 @@ function verifyApiToken(req, res, next) {
 function getUsers(req, res) {
     const users = db.getActiveUsers();
     const settings = db.getSettings() || {};
+
+    // 下发给订阅 Worker 的节点列表剔除已禁用条目（___DISABLED___ 前缀），
+    // 否则禁用节点会带着标记原文进入用户订阅；此处只过滤返回副本，不改存储数据
+    const feedSettings = {
+        ...settings,
+        bestDomains: (settings.bestDomains || []).filter(
+            domain => !(typeof domain === 'string' && domain.startsWith('___DISABLED___'))
+        )
+    };
     
     res.json({
         users: users,
-        settings: settings
+        settings: feedSettings
     });
 }
 
