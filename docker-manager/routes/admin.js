@@ -2098,7 +2098,8 @@ function getStatistics(req, res) {
     }
 }
 
-// 手动节点存活检测（大陆视角外部双源判定：776771 + Globalping）
+// 手动节点存活检测（大陆视角 Globalping 判定；776771 已于 2026-11-15 停用：
+// 其大陆探针全灭、对一切目标乱报「已被墙/0.0%」，曾误关 55 个节点）
 async function checkManualNodes() {
     const net = require('net');
     const dns = require('dns').promises;
@@ -2122,35 +2123,12 @@ async function checkManualNodes() {
         }
     }
 
-    // 大陆视角检测（776771）：面板服务器在境外，TCP 直连通≠大陆可用
-    // （被墙节点从境外照样连得上），故存活判定以 GFW 检测结论为准；
-    // 接口不可用/超时返回 null，调用方改用 Globalping 备用判据；两源都无结论
-    // 时保持节点现状，绝不凭接口故障或本机直连结果禁用节点。
-    async function gfwProbe(host, port, timeout = 20000) {
-        try {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), timeout);
-            const resp = await fetch(`https://776771.xyz/ip=${encodeURIComponent(host + ':' + port)}`, {
-                signal: ctrl.signal,
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-            });
-            clearTimeout(timer);
-            if (!resp.ok) return null;
-            const d = await resp.json();
-            const gfw = d && d['GFW检测'];
-            if (!gfw) return null;
-            return { gfw, rate: (d['大陆三网统计'] && d['大陆三网统计']['综合连通率']) || '', src: '776771' };
-        } catch (e) {
-            return null;
-        }
-    }
-
-    // 备用大陆视角检测（Globalping）：776771 不可用时的第二判据。
+    // 大陆视角检测（Globalping）：唯一判据。
     // Globalping 在大陆有真实探针（移动/联通/电信 eyeball 与云厂商节点），
     // 用 HTTP 测量打目标端口：CF 前置端点对明文 HTTP 回 400 也算连通证据。
     // 判定从严：大陆探针 ≥1 个拿到 HTTP 响应＝未被墙；海外探针能通而大陆 ≥3 个
     // 探针全失败＝已被墙；全部探针都失败＝海外离线；其余情况（含被限流、
-    // 探针不足）返回 null，调用方保持节点现状，绝不凭备用源的不确定结果禁用节点。
+    // 探针不足）返回 null，调用方保持节点现状，绝不凭不确定的结果禁用节点。
     async function gpProbe(host, port, gpToken) {
         const base = 'https://api.globalping.io/v1/measurements';
         try {
@@ -2217,6 +2195,7 @@ async function checkManualNodes() {
 
         const updatedDomains = [...bestDomains];
         let changed = false, disabledCount = 0, restoredCount = 0, skippedCount = 0;
+        let verdictCount = 0, badCount = 0;
         const gpToken = (settings.globalpingToken || '').trim();
         const badStreak = (settings.nodeBadStreak && typeof settings.nodeBadStreak === 'object') ? settings.nodeBadStreak : {};
         const streakUpdates = new Map();
@@ -2256,13 +2235,11 @@ async function checkManualNodes() {
                     return;
                 }
 
-                // 判定口径：只认大陆视角两个外部源（776771 优先、Globalping 备用），
+                // 判定口径：只认大陆视角外部源 Globalping，
                 // 绝不用面板服务器本机 IP 直连判定存活（境外直连通≠大陆可用，且部分
-                // 服务商屏蔽机房 IP 会误杀）。两源都无结论、或结论为「局部丢包」
-                // 「单网阻断」等中间状态时，保持现状不翻转。
+                // 服务商屏蔽机房 IP 会误杀）。无结论、或结论为中间状态时，保持现状不翻转。
                 // 防抖：坏结论须连续 2 轮才禁用（单轮抽样抖动不杀节点）；恢复立即生效。
-                let probe = await gfwProbe(host, port);
-                if (!probe) probe = await gpProbe(host, port, gpToken);
+                let probe = await gpProbe(host, port, gpToken);
                 let verdict = null; // true=可用 false=不可用 null=无结论/中间状态
                 if (probe) {
                     if (probe.gfw === '未被墙') verdict = true;
@@ -2270,6 +2247,7 @@ async function checkManualNodes() {
                 }
 
                 if (verdict === true) {
+                    verdictCount++;
                     streakUpdates.set(real, 0);
                     if (isDisabled) {
                         updatedDomains[idx] = real;
@@ -2278,6 +2256,7 @@ async function checkManualNodes() {
                         console.log(`[节点检测] 恢复: ${addressPart} (${probe.src} ${probe.gfw}${probe.rate ? '/' + probe.rate : ''})`);
                     }
                 } else if (verdict === false) {
+                    verdictCount++; badCount++;
                     const streak = (badStreak[real] || 0) + 1;
                     streakUpdates.set(real, streak);
                     if (!isDisabled && streak >= 2) {
@@ -2290,6 +2269,14 @@ async function checkManualNodes() {
                     }
                 }
             }));
+        }
+
+        // 整轮异常作废：坏结论占比过半且样本足够时，疑似检测源故障
+        // （如 2026-11-15 776771 大陆探针全灭、对一切目标乱报已被墙），
+        // 本轮不落任何状态变更，防止单一判据发疯时批量误杀。
+        if (verdictCount >= 10 && badCount * 2 > verdictCount) {
+            console.log(`[节点检测] 本轮坏结论 ${badCount}/${verdictCount} 占比异常，疑似检测源故障，整轮作废`);
+            return { checked: manualIndexes.length, disabled: 0, restored: 0, skipped: skippedCount, discarded: true };
         }
 
         if (changed || streakUpdates.size > 0) {
