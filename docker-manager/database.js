@@ -135,6 +135,12 @@ function initDatabase() {
             city TEXT,
             latitude REAL,
             longitude REAL,
+            exit_ipv4 TEXT,
+            exit_ipv6 TEXT,
+            exit_stack TEXT,
+            exit_country TEXT,
+            exit_city TEXT,
+            exit_org TEXT,
             response_time INTEGER DEFAULT -1,
             status TEXT NOT NULL DEFAULT 'pending',
             last_check_at INTEGER,
@@ -275,6 +281,12 @@ function initDatabase() {
                     city TEXT,
                     latitude REAL,
                     longitude REAL,
+                    exit_ipv4 TEXT,
+                    exit_ipv6 TEXT,
+                    exit_stack TEXT,
+                    exit_country TEXT,
+                    exit_city TEXT,
+                    exit_org TEXT,
                     response_time INTEGER DEFAULT -1,
                     status TEXT NOT NULL DEFAULT 'pending',
                     last_check_at INTEGER,
@@ -306,6 +318,18 @@ function initDatabase() {
             // 初始化排序值为 id
             db.exec('UPDATE proxy_ips SET sort_order = id WHERE sort_order = 0 OR sort_order IS NULL');
             console.log('[数据库迁移] ✅ sort_order 字段添加成功');
+        }
+
+        // 迁移：为 proxy_ips 表添加落地（出口）IP 字段
+        const exitColumns = ['exit_ipv4', 'exit_ipv6', 'exit_stack', 'exit_country', 'exit_city', 'exit_org'];
+        for (const column of exitColumns) {
+            const columnExists = db.prepare(
+                `SELECT COUNT(*) as count FROM pragma_table_info('proxy_ips') WHERE name='${column}'`
+            ).get();
+            if (columnExists.count === 0) {
+                console.log(`[数据库迁移] 为 proxy_ips 表添加 ${column} 字段...`);
+                db.exec(`ALTER TABLE proxy_ips ADD COLUMN ${column} TEXT`);
+            }
         }
     } catch (e) {
         console.error('[数据库迁移] proxy_ips 表创建错误:', e.message);
@@ -1027,7 +1051,8 @@ function getActiveProxyIPsByRegion(region = null) {
 // 更新 ProxyIP 状态
 function updateProxyIPStatus(id, statusData) {
     const now = Date.now();
-    const { status, region, country, isp, city, latitude, longitude, responseTime } = statusData;
+    const { status, region, country, isp, city, latitude, longitude, responseTime,
+        exitIPv4, exitIPv6, exitStack, exitCountry, exitCity, exitOrg } = statusData;
     
     // 获取当前记录
     const current = getDb().prepare('SELECT * FROM proxy_ips WHERE id = ?').get(id);
@@ -1051,6 +1076,12 @@ function updateProxyIPStatus(id, statusData) {
             city = ?,
             latitude = ?,
             longitude = ?,
+            exit_ipv4 = ?,
+            exit_ipv6 = ?,
+            exit_stack = ?,
+            exit_country = ?,
+            exit_city = ?,
+            exit_org = ?,
             response_time = ?,
             last_check_at = ?,
             fail_count = ?,
@@ -1058,7 +1089,7 @@ function updateProxyIPStatus(id, statusData) {
             updated_at = ?
         WHERE id = ?
     `);
-    
+
     return stmt.run(
         status,
         region || current.region,
@@ -1067,6 +1098,12 @@ function updateProxyIPStatus(id, statusData) {
         city || current.city,
         latitude || current.latitude,
         longitude || current.longitude,
+        exitIPv4 !== undefined ? exitIPv4 : current.exit_ipv4,
+        exitIPv6 !== undefined ? exitIPv6 : current.exit_ipv6,
+        exitStack !== undefined ? exitStack : current.exit_stack,
+        exitCountry !== undefined ? exitCountry : current.exit_country,
+        exitCity !== undefined ? exitCity : current.exit_city,
+        exitOrg !== undefined ? exitOrg : current.exit_org,
         responseTime >= 0 ? responseTime : current.response_time,
         now,
         newFailCount,

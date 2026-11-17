@@ -44,10 +44,20 @@ async function checkProxyIP(proxyIP, port = 443) {
         const successfulProbe = probeResults.find(result => result.success);
         const responseTime = Date.now() - startTime;
 
+        // 落地（出口）信息：按探针实际回显的出口 IP 归类。
+        // v4 探针回 v6 出口（如 AWS 双栈机）时，该出口记在 v6 侧，不算 v4 出口。
+        const v4Probe = probeResults[0] || {};
+        const v6Probe = probeResults[1] || {};
+        const exitIPv4 = v4Probe.exitIP && !v4Probe.exitIP.includes(':') ? v4Probe.exitIP : null;
+        const exitIPv6 = v6Probe.exitIP && v6Probe.exitIP.includes(':') ? v6Probe.exitIP : null;
+        const exitMeta = (exitIPv4 ? v4Probe.exitMeta : null) || (exitIPv6 ? v6Probe.exitMeta : null)
+            || v4Probe.exitMeta || v6Probe.exitMeta || null;
+        const exitStack = exitIPv4 && exitIPv6 ? 'dual' : exitIPv4 ? 'ipv4' : exitIPv6 ? 'ipv6' : null;
+
         if (successfulProbe) {
             // 获取IP地理位置信息
             const geoInfo = await getIPInfo(proxyIP);
-            
+
             return {
                 success: true,
                 status: 'active',
@@ -57,7 +67,13 @@ async function checkProxyIP(proxyIP, port = 443) {
                 isp: geoInfo.isp,
                 city: geoInfo.city,
                 latitude: geoInfo.latitude,
-                longitude: geoInfo.longitude
+                longitude: geoInfo.longitude,
+                exitIPv4,
+                exitIPv6,
+                exitStack,
+                exitCountry: exitMeta ? exitMeta.country : null,
+                exitCity: exitMeta ? exitMeta.city : null,
+                exitOrg: exitMeta ? exitMeta.org : null
             };
         } else {
             return {
@@ -147,7 +163,16 @@ function testProbe(proxyIP, port, target) {
                     finish({ success: false, error: '探针响应缺少出口 IP' });
                     return;
                 }
-                finish({ success: isMatchingFamily(exitIP, target.name), exitIP });
+                finish({
+                    success: isMatchingFamily(exitIP, target.name),
+                    exitIP,
+                    exitMeta: {
+                        country: payload.country || null,
+                        city: payload.city || null,
+                        org: payload.asOrganization || payload.org || null,
+                        colo: payload.colo || null
+                    }
+                });
             } catch (error) {
                 finish({ success: false, error: error.message });
             }

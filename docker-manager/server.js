@@ -353,7 +353,13 @@ cron.schedule('*/15 * * * *', async () => {
                                         isp: result.isp,
                                         city: result.city,
                                         latitude: result.latitude,
-                                        longitude: result.longitude
+                                        longitude: result.longitude,
+                                        exitIPv4: result.exitIPv4,
+                                        exitIPv6: result.exitIPv6,
+                                        exitStack: result.exitStack,
+                                        exitCountry: result.exitCountry,
+                                        exitCity: result.exitCity,
+                                        exitOrg: result.exitOrg
                                     });
                                     if (result.status === 'active') activeCount++;
                                 } else {

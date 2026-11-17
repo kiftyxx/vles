@@ -1230,6 +1230,7 @@ function renderAdminPanel() {
                       </th>
                       <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">地址</th>
                       <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">地区</th>
+                      <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">落地 IP</th>
                       <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">状态</th>
                       <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">响应时间</th>
                       <th class="px-4 py-3 text-left font-medium text-slate-600 dark:text-zinc-400">成功/失败</th>
@@ -1239,7 +1240,7 @@ function renderAdminPanel() {
                   </thead>
                   <tbody id="proxyip-table-body" class="divide-y divide-slate-200 dark:divide-zinc-800">
                     <tr>
-                      <td colspan="8" class="p-8 text-center text-slate-400 dark:text-zinc-600">
+                      <td colspan="9" class="p-8 text-center text-slate-400 dark:text-zinc-600">
                         <span class="material-symbols-outlined text-4xl mb-2">cloud_off</span>
                         <p class="text-sm">暂无 ProxyIP</p>
                       </td>
@@ -3213,7 +3214,7 @@ function renderAdminPanel() {
       const tbody = document.getElementById('proxyip-table-body');
       
       if (!proxies || proxies.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400 dark:text-zinc-600"><span class="material-symbols-outlined text-4xl mb-2">cloud_off</span><p class="text-sm">暂无 ProxyIP</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400 dark:text-zinc-600"><span class="material-symbols-outlined text-4xl mb-2">cloud_off</span><p class="text-sm">暂无 ProxyIP</p></td></tr>';
         return;
       }
       
@@ -3233,6 +3234,7 @@ function renderAdminPanel() {
             (proxy.isp ? '<br><span class="text-xs text-slate-500 dark:text-zinc-500 select-text">' + proxy.isp + '</span>' : '') +
           '</td>' +
           '<td class="px-4 py-3">' + regionBadge + '</td>' +
+          '<td class="px-4 py-3">' + getExitIPCell(proxy) + '</td>' +
           '<td class="px-4 py-3">' + statusBadge + '</td>' +
           '<td class="px-4 py-3"><span class="text-xs font-mono">' + responseTime + '</span></td>' +
           '<td class="px-4 py-3">' +
@@ -3282,6 +3284,27 @@ function renderAdminPanel() {
       return badges[status] || badges['pending'];
     }
     
+    function getExitIPCell(proxy) {
+      const ips = [];
+      if (proxy.exit_ipv4) ips.push(proxy.exit_ipv4);
+      if (proxy.exit_ipv6) ips.push(proxy.exit_ipv6);
+      if (ips.length === 0) return '<span class="text-xs text-slate-400 dark:text-zinc-600">-</span>';
+      const stackText = { 'dual': '双栈', 'ipv4': '仅 IPv4', 'ipv6': '仅 IPv6' }[proxy.exit_stack] || '';
+      const stackColor = proxy.exit_stack === 'dual'
+        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+        : proxy.exit_stack === 'ipv6'
+          ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
+          : 'bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400';
+      let html = ips.map(ip => '<code class="block text-[11px] font-mono select-text break-all">' + ip + '</code>').join('');
+      const place = [proxy.exit_country, proxy.exit_city].filter(Boolean).join(' · ');
+      let sub = '';
+      if (stackText) sub += '<span class="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium ' + stackColor + '">' + stackText + '</span>';
+      if (place) sub += '<span class="text-[11px] text-slate-500 dark:text-zinc-500 select-text">' + (sub ? ' ' : '') + place + '</span>';
+      if (sub) html += '<div class="mt-1">' + sub + '</div>';
+      if (proxy.exit_org) html += '<div class="text-[11px] text-slate-500 dark:text-zinc-500 select-text">' + proxy.exit_org + '</div>';
+      return html;
+    }
+
     function getRegionBadge(region, country) {
       if (!region && !country) return '-';
       const text = region || country;

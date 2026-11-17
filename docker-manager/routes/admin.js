@@ -1601,7 +1601,13 @@ async function addProxyIPs(req, res) {
                                     isp: result.isp,
                                     city: result.city,
                                     latitude: result.latitude,
-                                    longitude: result.longitude
+                                    longitude: result.longitude,
+                                    exitIPv4: result.exitIPv4,
+                                    exitIPv6: result.exitIPv6,
+                                    exitStack: result.exitStack,
+                                    exitCountry: result.exitCountry,
+                                    exitCity: result.exitCity,
+                                    exitOrg: result.exitOrg
                                 });
                             } else {
                                 db.updateProxyIPStatus(proxyId, {
@@ -1689,7 +1695,13 @@ async function checkProxyIPs(req, res) {
                             city: result.city,
                             latitude: result.latitude,
                             longitude: result.longitude,
-                            responseTime: result.responseTime
+                            responseTime: result.responseTime,
+                            exitIPv4: result.exitIPv4,
+                            exitIPv6: result.exitIPv6,
+                            exitStack: result.exitStack,
+                            exitCountry: result.exitCountry,
+                            exitCity: result.exitCity,
+                            exitOrg: result.exitOrg
                         });
                         
                         if (result.success) {
