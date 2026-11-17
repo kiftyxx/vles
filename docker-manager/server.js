@@ -395,8 +395,22 @@ cron.schedule('*/15 * * * *', async () => {
             console.error('[定时检查ProxyIP] 模块加载失败:', error.message);
         }
 
-        // 手动节点存活检测（异步，不阻塞主流程）
-        setImmediate(() => adminRoutes.checkManualNodes());
+        // 手动节点存活检测：自动轮次每 8 小时最多一轮（Globalping 积分
+        // 消耗大头，2026-11-17 用户定版由每 15 分钟降频）；后台手动触发
+        // 的检测不受此门限制，其余定时任务仍按 15 分钟执行。
+        try {
+            const gateSettings = db.getSettings() || {};
+            const lastManualCheck = Number(gateSettings.lastManualNodeCheckAt) || 0;
+            if (Date.now() - lastManualCheck >= 8 * 60 * 60 * 1000) {
+                gateSettings.lastManualNodeCheckAt = Date.now();
+                db.saveSettings(gateSettings);
+                setImmediate(() => adminRoutes.checkManualNodes());
+            } else {
+                console.log('[节点检测] 距上次自动检测不足 8 小时，本轮跳过');
+            }
+        } catch (e) {
+            console.error('[节点检测] 降频门检查失败:', e.message);
+        }
         
     } catch (error) {
         console.error('[定时任务] 执行失败:', error.message);
