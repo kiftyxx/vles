@@ -2110,8 +2110,49 @@ function getStatistics(req, res) {
     }
 }
 
-// 手动节点存活检测（大陆视角 Globalping 判定；776771 已于 2026-11-15 停用：
-// 其大陆探针全灭、对一切目标乱报「已被墙/0.0%」，曾误关 55 个节点）
+// 备用大陆视角检测源：776771（https://776771.xyz/ip=<ip>:<port>，无凭据 JSON 接口）。
+// 2026-11-15 它曾大陆探针全灭、对一切目标乱报「已被墙」误关 55 个节点，故只作
+// Globalping 无结论时的备用：必须过完整结构校验（结论串＋综合连通率∈[0,100]＋
+// 总采样节点 ≥10），并由 checkManualNodes 内的金丝雀把关后才采信。
+// 返回形状与 gpProbe 对齐（{gfw, rate, src}），无结论/不可信一律返回 null。
+async function probe776771(host, port) {
+    const target = String(host).includes(':') ? `%5B${host}%5D:${port}` : `${host}:${port}`;
+    try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 45000);
+        const resp = await fetch(`https://776771.xyz/ip=${target}`, {
+            signal: ctrl.signal,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': 'application/json' }
+        });
+        clearTimeout(timer);
+        if (!resp.ok) return null;
+        const data = await resp.json().catch(() => null);
+        if (!data || typeof data !== 'object') return null;
+        const verdict = typeof data['GFW检测'] === 'string' ? data['GFW检测'] : '';
+        if (!verdict) return null;
+        const stats = data['大陆三网统计'];
+        if (!stats || typeof stats !== 'object') return null;
+        let rate = null;
+        const raw = stats['综合连通率'];
+        if (typeof raw === 'string') { const m = raw.match(/([0-9]+(?:\.[0-9]+)?)/); if (m) rate = parseFloat(m[1]); }
+        else if (typeof raw === 'number') rate = raw;
+        if (rate === null || isNaN(rate) || rate < 0 || rate > 100) return null;
+        let total = null;
+        const rawTotal = stats['总采样节点'];
+        if (typeof rawTotal === 'number') total = rawTotal;
+        else if (typeof rawTotal === 'string' && /^[0-9]+$/.test(rawTotal.trim())) total = parseInt(rawTotal.trim(), 10);
+        if (total === null || total < 10) return null;
+        if (verdict === '未被墙' || verdict === '已被墙' || verdict === '海外离线') {
+            return { gfw: verdict, rate: rate + '%', src: '776771' };
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// 手动节点存活检测（大陆视角 Globalping 主判；GP 无结论时 776771 备用源兜底，
+// 备用源须先过金丝雀校准，见 probe776771 上方注释）
 async function checkManualNodes() {
     const net = require('net');
     const dns = require('dns').promises;
@@ -2212,6 +2253,22 @@ async function checkManualNodes() {
         const badStreak = (settings.nodeBadStreak && typeof settings.nodeBadStreak === 'object') ? settings.nodeBadStreak : {};
         const streakUpdates = new Map();
 
+        // 776771 备用源金丝雀（本轮只测一次，多节点并发共用同一 Promise）：
+        // 先用必通目标 223.5.5.5:53 校准，金丝雀没回「未被墙」则本轮整体不采信
+        // 776771，防止其再次出现 2026-11-15 式的大陆探针全灭误判。
+        let canary776771Promise = null;
+        const probe776771Gated = (host, port) => {
+            if (!canary776771Promise) {
+                canary776771Promise = (async () => {
+                    const c = await probe776771('223.5.5.5', 53);
+                    const ok = !!c && c.gfw === '未被墙';
+                    console.log(`[节点检测] 776771 金丝雀${ok ? '通过，备用源待命' : '未通过，本轮不启用备用源'}`);
+                    return ok;
+                })();
+            }
+            return canary776771Promise.then(ok => ok ? probe776771(host, port) : null);
+        };
+
         // 每批 8 个并发
         const BATCH = 8;
         for (let i = 0; i < manualIndexes.length; i += BATCH) {
@@ -2247,11 +2304,13 @@ async function checkManualNodes() {
                     return;
                 }
 
-                // 判定口径：只认大陆视角外部源 Globalping，
+                // 判定口径：大陆视角外部源 Globalping 主判、无结论时 776771 备用，
                 // 绝不用面板服务器本机 IP 直连判定存活（境外直连通≠大陆可用，且部分
                 // 服务商屏蔽机房 IP 会误杀）。无结论、或结论为中间状态时，保持现状不翻转。
                 // 防抖：坏结论须连续 2 轮才禁用（单轮抽样抖动不杀节点）；恢复立即生效。
                 let probe = await gpProbe(host, port, gpToken);
+                // 主源 Globalping 无结论时，才走 776771 备用源（金丝雀通过才采信）
+                if (!probe) probe = await probe776771Gated(host, port);
                 let verdict = null; // true=可用 false=不可用 null=无结论/中间状态
                 if (probe) {
                     if (probe.gfw === '未被墙') verdict = true;
@@ -2393,5 +2452,6 @@ module.exports = {
     clearSystemLogs,
     getStatistics,
     checkManualNodes,
-    triggerCheckManualNodes
+    triggerCheckManualNodes,
+    probe776771
 };
